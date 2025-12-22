@@ -306,6 +306,38 @@ con.execute(f"""
     )            
       """)
 
+# ---------------------------------------------------------
+# 12 avg_hourly
+# ---------------------------------------------------------
+
+
+con.execute(f"""
+    COPY
+    (
+        WITH hourly_daily AS (
+    SELECT
+        storeId,
+        DATE(createdAt) AS bill_date,
+        EXTRACT(HOUR FROM createdAt) AS hour_of_day,
+        COUNT(*) AS bills_in_hour
+    FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+    GROUP BY storeId, DATE(createdAt), EXTRACT(HOUR FROM createdAt)
+)
+SELECT
+    storeId,
+    hour_of_day,
+    AVG(bills_in_hour) AS avg_bill_count
+FROM hourly_daily
+GROUP BY storeId, hour_of_day
+ORDER BY storeId, hour_of_day
+)
+ TO '{GOLD_BASE}/Avg_Hourly_Billing_Trend'
+ (
+     format parquet,
+     partition_by(storeId)
+ )
+""")
+
 con.close()
 
 print("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
