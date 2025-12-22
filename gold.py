@@ -293,7 +293,7 @@ con.execute(f"""
             """)
 
 # ---------------------------------------------------------
-# 11 Monthlu bills
+# 11 Monthly bills
 # ---------------------------------------------------------
 con.execute(f"""         
         copy(select storeId, MONTHNAME(createdAt),(count(distinct(billId))) as 'No. of Bills' 
