@@ -1,0 +1,8 @@
+azure-storage-blob
+python-dotenv
+duckdb
+azure-core
+pandas
+dotenv
+fastparquet
+pyarrow
