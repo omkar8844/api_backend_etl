@@ -157,7 +157,8 @@ r_query = f"""
         load_time,
         storeId,
         tenantId,
-        billId
+        billId,
+        Items
     FROM '{receiptExtractedData}'
 """
 rx=load_data('receiptExtractedData',r_query)
