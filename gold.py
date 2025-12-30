@@ -344,43 +344,45 @@ ORDER BY storeId, hour_of_day
 
 con.execute(f"""
 COPY (
+    WITH base AS (
+        SELECT
+            storeId,
+            DATE(createdAt) AS bill_date   -- 🔑 normalize ONCE
+        FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+        WHERE storeId IS NOT NULL
+    )
     SELECT
         storeId,
 
         -- Today
-        COUNT(CASE 
-            WHEN DATE(createdAt) = CURRENT_DATE 
-            THEN billId 
+        COUNT(CASE
+            WHEN bill_date = CURRENT_DATE THEN 1
         END) AS bills_today,
 
-        -- Last 2 days (including today)
-        COUNT(CASE 
-            WHEN createdAt >= CURRENT_DATE - INTERVAL '1' DAY 
-            THEN billId 
+        -- Last 2 days (today + yesterday)
+        COUNT(CASE
+            WHEN bill_date >= CURRENT_DATE - 1 THEN 1
         END) AS bills_last_2_days,
 
         -- Last 7 days
-        COUNT(CASE 
-            WHEN createdAt >= CURRENT_DATE - INTERVAL '6' DAY 
-            THEN billId 
+        COUNT(CASE
+            WHEN bill_date >= CURRENT_DATE - 6 THEN 1
         END) AS bills_last_7_days,
 
-        -- Last 1 month
-        COUNT(CASE 
-            WHEN createdAt >= CURRENT_DATE - INTERVAL '1' MONTH 
-            THEN billId 
+        -- Last 1 month (~30 days)
+        COUNT(CASE
+            WHEN bill_date >= CURRENT_DATE - 30 THEN 1
         END) AS bills_last_1_month,
 
-        -- Last 3 months
-        COUNT(CASE 
-            WHEN createdAt >= CURRENT_DATE - INTERVAL '3' MONTH 
-            THEN billId 
-        END) AS bills_last_3_months,
+        -- Last 90 days
+        COUNT(CASE
+            WHEN bill_date >= CURRENT_DATE - 90 THEN 1
+        END) AS bills_last_90_days,
 
-        -- Lifetime
-        COUNT(billId) AS bills_lifetime
+        -- Lifetime (ALL data)
+        COUNT(*) AS bills_lifetime
 
-    FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+    FROM base
     GROUP BY storeId
 )
 TO '{GOLD_BASE}/bill_count_windows'
@@ -389,6 +391,7 @@ TO '{GOLD_BASE}/bill_count_windows'
     PARTITION_BY (storeId)
 );
 """)
+
 
 
 
