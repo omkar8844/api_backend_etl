@@ -338,6 +338,60 @@ ORDER BY storeId, hour_of_day
  )
 """)
 
+# ---------------------------------------------------------
+# 13 bill_count_daily
+# ---------------------------------------------------------
+
+con.execute(f"""
+COPY (
+    SELECT
+        storeId,
+
+        -- Today
+        COUNT(CASE 
+            WHEN DATE(createdAt) = CURRENT_DATE 
+            THEN billId 
+        END) AS bills_today,
+
+        -- Last 2 days (including today)
+        COUNT(CASE 
+            WHEN createdAt >= CURRENT_DATE - INTERVAL '1' DAY 
+            THEN billId 
+        END) AS bills_last_2_days,
+
+        -- Last 7 days
+        COUNT(CASE 
+            WHEN createdAt >= CURRENT_DATE - INTERVAL '6' DAY 
+            THEN billId 
+        END) AS bills_last_7_days,
+
+        -- Last 1 month
+        COUNT(CASE 
+            WHEN createdAt >= CURRENT_DATE - INTERVAL '1' MONTH 
+            THEN billId 
+        END) AS bills_last_1_month,
+
+        -- Last 3 months
+        COUNT(CASE 
+            WHEN createdAt >= CURRENT_DATE - INTERVAL '3' MONTH 
+            THEN billId 
+        END) AS bills_last_3_months,
+
+        -- Lifetime
+        COUNT(billId) AS bills_lifetime
+
+    FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+    GROUP BY storeId
+)
+TO '{GOLD_BASE}/bill_count_windows'
+(
+    FORMAT PARQUET,
+    PARTITION_BY (storeId)
+);
+""")
+
+
+
 con.close()
 
 print("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
