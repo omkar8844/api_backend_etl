@@ -342,12 +342,61 @@ ORDER BY storeId, hour_of_day
 # 13 bill_count_daily
 # ---------------------------------------------------------
 
+# con.execute(f"""
+# COPY (
+#     WITH base AS (
+#         SELECT
+#             storeId,
+#             DATE(createdAt) AS bill_date   -- 🔑 normalize ONCE
+#         FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+#         WHERE storeId IS NOT NULL
+#     )
+#     SELECT
+#         storeId,
+
+#         -- Today
+#         COUNT(CASE
+#             WHEN bill_date = CURRENT_DATE THEN 1
+#         END) AS bills_today,
+
+#         -- Last 2 days (today + yesterday)
+#         COUNT(CASE
+#             WHEN bill_date >= CURRENT_DATE - 1 THEN 1
+#         END) AS bills_last_2_days,
+
+#         -- Last 7 days
+#         COUNT(CASE
+#             WHEN bill_date >= CURRENT_DATE - 6 THEN 1
+#         END) AS bills_last_7_days,
+
+#         -- Last 1 month (~30 days)
+#         COUNT(CASE
+#             WHEN bill_date >= CURRENT_DATE - 30 THEN 1
+#         END) AS bills_last_1_month,
+
+#         -- Last 90 days
+#         COUNT(CASE
+#             WHEN bill_date >= CURRENT_DATE - 90 THEN 1
+#         END) AS bills_last_90_days,
+
+#         -- Lifetime (ALL data)
+#         COUNT(*) AS bills_lifetime
+
+#     FROM base
+#     GROUP BY storeId
+# )
+# TO '{GOLD_BASE}/bill_count_windows'
+# (
+#     FORMAT PARQUET,
+#     PARTITION_BY (storeId)
+# );
+# """)
 con.execute(f"""
 COPY (
     WITH base AS (
         SELECT
             storeId,
-            DATE(createdAt) AS bill_date   -- 🔑 normalize ONCE
+            DATE(createdAt) AS bill_date
         FROM read_parquet('{SILVER_PATH}', union_by_name=true)
         WHERE storeId IS NOT NULL
     )
@@ -355,31 +404,50 @@ COPY (
         storeId,
 
         -- Today
-        COUNT(CASE
-            WHEN bill_date = CURRENT_DATE THEN 1
-        END) AS bills_today,
+        COUNT(CASE WHEN bill_date = CURRENT_DATE THEN 1 END)
+            AS bills_today,
 
         -- Last 2 days (today + yesterday)
+        COUNT(CASE WHEN bill_date >= CURRENT_DATE - 1 THEN 1 END)
+            AS bills_last_2_days,
+
+        -- Previous 2 days
         COUNT(CASE
-            WHEN bill_date >= CURRENT_DATE - 1 THEN 1
-        END) AS bills_last_2_days,
+            WHEN bill_date BETWEEN CURRENT_DATE - 3 AND CURRENT_DATE - 2
+            THEN 1
+        END) AS bills_prev_2_days,
 
         -- Last 7 days
+        COUNT(CASE WHEN bill_date >= CURRENT_DATE - 6 THEN 1 END)
+            AS bills_last_7_days,
+
+        -- Previous 7 days
         COUNT(CASE
-            WHEN bill_date >= CURRENT_DATE - 6 THEN 1
-        END) AS bills_last_7_days,
+            WHEN bill_date BETWEEN CURRENT_DATE - 13 AND CURRENT_DATE - 7
+            THEN 1
+        END) AS bills_prev_7_days,
 
         -- Last 1 month (~30 days)
+        COUNT(CASE WHEN bill_date >= CURRENT_DATE - 30 THEN 1 END)
+            AS bills_last_1_month,
+
+        -- Previous 1 month
         COUNT(CASE
-            WHEN bill_date >= CURRENT_DATE - 30 THEN 1
-        END) AS bills_last_1_month,
+            WHEN bill_date BETWEEN CURRENT_DATE - 60 AND CURRENT_DATE - 31
+            THEN 1
+        END) AS bills_prev_1_month,
 
         -- Last 90 days
-        COUNT(CASE
-            WHEN bill_date >= CURRENT_DATE - 90 THEN 1
-        END) AS bills_last_90_days,
+        COUNT(CASE WHEN bill_date >= CURRENT_DATE - 90 THEN 1 END)
+            AS bills_last_90_days,
 
-        -- Lifetime (ALL data)
+        -- Previous 90 days
+        COUNT(CASE
+            WHEN bill_date BETWEEN CURRENT_DATE - 180 AND CURRENT_DATE - 91
+            THEN 1
+        END) AS bills_prev_90_days,
+
+        -- Lifetime
         COUNT(*) AS bills_lifetime
 
     FROM base
