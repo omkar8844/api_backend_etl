@@ -94,12 +94,14 @@ TO '{GOLD_BASE}/daily_customer_visits'
 con.execute(f"""
 COPY (
     SELECT
+        name,
         storeId,
         mobileNumber,
         SUM(billAmount) AS total_spend
     FROM read_parquet('{SILVER_PATH}', union_by_name=True)
     WHERE LENGTH(mobileNumber) = 10
-    GROUP BY storeId, mobileNumber
+    GROUP BY name,storeId, mobileNumber
+    ORDER BY total_spend DESC
 )
 TO '{GOLD_BASE}/top_spenders'
 (
@@ -545,6 +547,71 @@ TO '{GOLD_BASE}/sales_windows'
 
 
 
+
+con.execute(f"""
+            copy(WITH base AS (
+    SELECT
+        storeId,
+        mobileNumber,
+        STRFTIME(DATE(createdAt), '%Y-%m') AS year_month
+    FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+    WHERE LENGTH(mobileNumber) = 10
+),
+latest_month AS (
+    SELECT
+        storeId,
+        MAX(year_month) AS max_year_month
+    FROM base
+    GROUP BY storeId
+),
+customer_stats AS (
+    SELECT
+        b.storeId,
+        b.mobileNumber,
+
+        -- lifetime visits
+        COUNT(*) AS lifetime_visits,
+
+        -- active in latest month flag
+        MAX(CASE
+            WHEN b.year_month = lm.max_year_month THEN 1
+            ELSE 0
+        END) AS is_active
+    FROM base b
+    JOIN latest_month lm
+        ON b.storeId = lm.storeId
+    GROUP BY b.storeId, b.mobileNumber
+)
+SELECT
+    storeId,
+
+    COUNT(*) AS total_customers,
+
+    -- Active customers
+    SUM(is_active) AS active_customers,
+    ROUND(
+        100.0 * SUM(is_active) / COUNT(*),
+        2
+    ) AS active_customer_percentage,
+
+    -- Repeat customers (lifetime_visits >= 2)
+    COUNT(CASE
+        WHEN lifetime_visits >= 2 THEN 1
+    END) AS repeat_customers,
+    ROUND(
+        100.0 * COUNT(CASE WHEN lifetime_visits >= 2 THEN 1 END) / COUNT(*),
+        2
+    ) AS repeat_customer_percentage
+
+FROM customer_stats
+GROUP BY storeId)
+
+TO '{GOLD_BASE}/active_cust_pct'
+  (
+      format parquet,
+      partition_by(storeId)
+)
+""")
 
 
 con.close()
