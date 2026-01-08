@@ -710,6 +710,20 @@ TO '{GOLD_BASE}/rfm_segments'
 """)
 
 
+con.execute(f"""
+            copy
+            (
+            select storeId,customer_segment,count(distinct(mobileNumber)) as "Count of Customers"
+            from read_parquet('{GOLD_BASE}/rfm_segments/*/data_0.parquet')
+            group by storeId, customer_segment
+            )
+            TO '{GOLD_BASE}/cust_segment_count'
+                (
+                    FORMAT PARQUET,
+                    PARTITION_BY (storeId)
+                )
+            """)
+
 con.close()
 
 print("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
