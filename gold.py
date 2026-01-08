@@ -614,6 +614,102 @@ TO '{GOLD_BASE}/active_cust_pct'
 """)
 
 
+con.execute(f"""
+COPY (
+    WITH base AS (
+        SELECT
+            storeId,
+            mobileNumber,
+            DATE(createdAt) AS bill_date,
+            billAmount
+        FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+        WHERE storeId IS NOT NULL
+          AND LENGTH(mobileNumber) = 10
+    ),
+    customer_agg AS (
+        SELECT
+            storeId,
+            mobileNumber,
+            DATE_DIFF('day', MAX(bill_date), CURRENT_DATE) AS recency_days,
+            COUNT(*) AS frequency,
+            SUM(billAmount) AS monetary
+        FROM base
+        GROUP BY storeId, mobileNumber
+    ),
+    ranked AS (
+        SELECT
+            *,
+            PERCENT_RANK() OVER (PARTITION BY storeId ORDER BY recency_days ASC) AS r_pct,
+            PERCENT_RANK() OVER (PARTITION BY storeId ORDER BY frequency DESC) AS f_pct,
+            PERCENT_RANK() OVER (PARTITION BY storeId ORDER BY monetary DESC) AS m_pct
+        FROM customer_agg
+    ),
+    scored AS (
+        SELECT
+            *,
+            CASE
+                WHEN r_pct <= 0.10 THEN 5
+                WHEN r_pct <= 0.30 THEN 4
+                WHEN r_pct <= 0.60 THEN 3
+                WHEN r_pct <= 0.80 THEN 2
+                ELSE 1
+            END AS r_score,
+            CASE
+                WHEN f_pct <= 0.10 THEN 5
+                WHEN f_pct <= 0.30 THEN 4
+                WHEN f_pct <= 0.60 THEN 3
+                WHEN f_pct <= 0.80 THEN 2
+                ELSE 1
+            END AS f_score,
+            CASE
+                WHEN m_pct <= 0.10 THEN 5
+                WHEN m_pct <= 0.30 THEN 4
+                WHEN m_pct <= 0.60 THEN 3
+                WHEN m_pct <= 0.80 THEN 2
+                ELSE 1
+            END AS m_score
+        FROM ranked
+    )
+    SELECT
+        storeId,
+        mobileNumber,
+        recency_days,
+        frequency,
+        monetary,
+        r_score,
+        f_score,
+        m_score,
+        CONCAT(r_score, f_score, m_score) AS rfm_segment,
+        (r_score + f_score + m_score) AS rfm_score,
+
+        CASE
+            WHEN r_score >= 4 AND f_score >= 4 AND m_score >= 4
+                THEN 'Star Customers'
+            WHEN f_score >= 4 AND r_score >= 3
+                THEN 'Loyal Customers'
+            WHEN m_score >= 4 AND r_score >= 3
+                THEN 'Big Spenders'
+            WHEN r_score = 5 AND f_score = 1
+                THEN 'New Customers'
+            WHEN r_score >= 4 AND f_score = 2
+                THEN 'Potential Loyalists'
+            WHEN r_score <= 2 AND f_score >= 3
+                THEN 'At Risk'
+            WHEN r_score <= 2 AND f_score <= 2
+                THEN 'Hibernating'
+            ELSE 'Others'
+        END AS customer_segment
+
+    FROM scored
+)
+TO '{GOLD_BASE}/rfm_segments'
+(
+    FORMAT PARQUET,
+    PARTITION_BY (storeId)
+);
+""")
+
+
 con.close()
 
 print("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
