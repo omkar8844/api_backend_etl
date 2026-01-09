@@ -724,6 +724,21 @@ con.execute(f"""
                 )
             """)
 
+con.execute(f"""
+            copy
+            (
+            select storeId,customer_segment,sum(monetary) as "Total Amount Spent"
+            from read_parquet('{GOLD_BASE}/rfm_segments/*/data_0.parquet')
+            group by storeId, customer_segment
+            order by 1,3 desc
+            )
+            TO '{GOLD_BASE}/cust_segment_spend'
+                (
+                    FORMAT PARQUET,
+                    PARTITION_BY (storeId)
+                )
+            """)
+
 con.close()
 
 print("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
