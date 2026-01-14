@@ -329,10 +329,10 @@ def main():
     query=f"""
         SELECT 
             storeId, 
-            MONTHNAME(createdAt) AS month_name,
+            strftime(createdAt, '%Y-%m') as month,
             COUNT(DISTINCT billId) AS no_of_bills
         FROM read_parquet('{SILVER_PATH}', union_by_name=true)
-        GROUP BY storeId, MONTHNAME(createdAt)
+        GROUP BY storeId, strftime(createdAt, '%Y-%m')
     """,
     output_path=f"{GOLD_BASE}/monthly_bills",
     kpi_name="Monthly Bills"
@@ -370,48 +370,70 @@ def main():
         generate_kpi(con,
     query=f"""
         WITH base AS (
-            SELECT
-                storeId,
-                DATE(createdAt) AS bill_date
-            FROM read_parquet('{SILVER_PATH}', union_by_name=true)
-            WHERE storeId IS NOT NULL
-        )
         SELECT
             storeId,
-            -- Today
-            COUNT(CASE WHEN bill_date = CURRENT_DATE THEN 1 END) AS bills_today,
-            -- Last 2 days (today + yesterday)
-            COUNT(CASE WHEN bill_date >= CURRENT_DATE - 1 THEN 1 END) AS bills_last_2_days,
-            -- Previous 2 days
-            COUNT(CASE
-                WHEN bill_date BETWEEN CURRENT_DATE - 3 AND CURRENT_DATE - 2
-                THEN 1
-            END) AS bills_prev_2_days,
-            -- Last 7 days
-            COUNT(CASE WHEN bill_date >= CURRENT_DATE - 6 THEN 1 END) AS bills_last_7_days,
-            -- Previous 7 days
-            COUNT(CASE
-                WHEN bill_date BETWEEN CURRENT_DATE - 13 AND CURRENT_DATE - 7
-                THEN 1
-            END) AS bills_prev_7_days,
-            -- Last 1 month (~30 days)
-            COUNT(CASE WHEN bill_date >= CURRENT_DATE - 30 THEN 1 END) AS bills_last_1_month,
-            -- Previous 1 month
-            COUNT(CASE
-                WHEN bill_date BETWEEN CURRENT_DATE - 60 AND CURRENT_DATE - 31
-                THEN 1
-            END) AS bills_prev_1_month,
-            -- Last 90 days
-            COUNT(CASE WHEN bill_date >= CURRENT_DATE - 90 THEN 1 END) AS bills_last_90_days,
-            -- Previous 90 days
-            COUNT(CASE
-                WHEN bill_date BETWEEN CURRENT_DATE - 180 AND CURRENT_DATE - 91
-                THEN 1
-            END) AS bills_prev_90_days,
-            -- Lifetime
-            COUNT(*) AS bills_lifetime
-        FROM base
-        GROUP BY storeId
+            DATE(createdAt) AS bill_date
+        FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+        WHERE storeId IS NOT NULL
+    )
+    SELECT
+        storeId,
+
+        -- Today
+        COUNT(CASE WHEN bill_date = CURRENT_DATE THEN 1 END)
+            AS bills_today,
+
+        -- Yesterday
+        COUNT(CASE
+            WHEN bill_date = CURRENT_DATE - 1
+            THEN 1
+        END) AS bills_yesterday,
+
+        -- Last 2 days (today + yesterday)
+        COUNT(CASE WHEN bill_date >= CURRENT_DATE - 1 THEN 1 END)
+            AS bills_last_2_days,
+
+        -- Previous 2 days
+        COUNT(CASE
+            WHEN bill_date BETWEEN CURRENT_DATE - 3 AND CURRENT_DATE - 2
+            THEN 1
+        END) AS bills_prev_2_days,
+
+        -- Last 7 days
+        COUNT(CASE WHEN bill_date >= CURRENT_DATE - 6 THEN 1 END)
+            AS bills_last_7_days,
+
+        -- Previous 7 days
+        COUNT(CASE
+            WHEN bill_date BETWEEN CURRENT_DATE - 13 AND CURRENT_DATE - 7
+            THEN 1
+        END) AS bills_prev_7_days,
+
+        -- Last 1 month (~30 days)
+        COUNT(CASE WHEN bill_date >= CURRENT_DATE - 30 THEN 1 END)
+            AS bills_last_1_month,
+
+        -- Previous 1 month
+        COUNT(CASE
+            WHEN bill_date BETWEEN CURRENT_DATE - 60 AND CURRENT_DATE - 31
+            THEN 1
+        END) AS bills_prev_1_month,
+
+        -- Last 90 days
+        COUNT(CASE WHEN bill_date >= CURRENT_DATE - 90 THEN 1 END)
+            AS bills_last_90_days,
+
+        -- Previous 90 days
+        COUNT(CASE
+            WHEN bill_date BETWEEN CURRENT_DATE - 180 AND CURRENT_DATE - 91
+            THEN 1
+        END) AS bills_prev_90_days,
+
+        -- Lifetime
+        COUNT(*) AS bills_lifetime
+
+    FROM base
+    GROUP BY storeId
     """,
     output_path=f"{GOLD_BASE}/bill_count_windows",
     kpi_name="Bill Count Windows"
@@ -423,64 +445,81 @@ def main():
         generate_kpi(con,
     query=f"""
         WITH base AS (
-            SELECT
-                storeId,
-                DATE(createdAt) AS bill_date,
-                billAmount
-            FROM read_parquet('{SILVER_PATH}', union_by_name=true)
-            WHERE storeId IS NOT NULL
-        )
         SELECT
             storeId,
-            -- Today
-            COALESCE(SUM(CASE 
-                WHEN bill_date = CURRENT_DATE 
-                THEN billAmount 
-            END), 0) AS sales_today,
-            -- Last 2 days (today + yesterday)
-            COALESCE(SUM(CASE 
-                WHEN bill_date >= CURRENT_DATE - 1 
-                THEN billAmount 
-            END), 0) AS sales_last_2_days,
-            -- Previous 2 days
-            COALESCE(SUM(CASE
-                WHEN bill_date BETWEEN CURRENT_DATE - 3 AND CURRENT_DATE - 2
-                THEN billAmount
-            END), 0) AS sales_prev_2_days,
-            -- Last 7 days
-            COALESCE(SUM(CASE 
-                WHEN bill_date >= CURRENT_DATE - 6 
-                THEN billAmount 
-            END), 0) AS sales_last_7_days,
-            -- Previous 7 days
-            COALESCE(SUM(CASE
-                WHEN bill_date BETWEEN CURRENT_DATE - 13 AND CURRENT_DATE - 7
-                THEN billAmount
-            END), 0) AS sales_prev_7_days,
-            -- Last 1 month (~30 days)
-            COALESCE(SUM(CASE 
-                WHEN bill_date >= CURRENT_DATE - 30 
-                THEN billAmount 
-            END), 0) AS sales_last_1_month,
-            -- Previous 1 month
-            COALESCE(SUM(CASE
-                WHEN bill_date BETWEEN CURRENT_DATE - 60 AND CURRENT_DATE - 31
-                THEN billAmount
-            END), 0) AS sales_prev_1_month,
-            -- Last 90 days
-            COALESCE(SUM(CASE 
-                WHEN bill_date >= CURRENT_DATE - 90 
-                THEN billAmount 
-            END), 0) AS sales_last_90_days,
-            -- Previous 90 days
-            COALESCE(SUM(CASE
-                WHEN bill_date BETWEEN CURRENT_DATE - 180 AND CURRENT_DATE - 91
-                THEN billAmount
-            END), 0) AS sales_prev_90_days,
-            -- Lifetime sales
-            COALESCE(SUM(billAmount), 0) AS sales_lifetime
-        FROM base
-        GROUP BY storeId
+            DATE(createdAt) AS bill_date,
+            billAmount
+        FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+        WHERE storeId IS NOT NULL
+    )
+    SELECT
+        storeId,
+
+        -- Today
+        COALESCE(SUM(CASE 
+            WHEN bill_date = CURRENT_DATE 
+            THEN billAmount 
+        END), 0) AS sales_today,
+
+        -- Yesterday
+        COALESCE(SUM(CASE
+            WHEN bill_date = CURRENT_DATE - 1
+            THEN billAmount
+        END), 0) AS sales_yesterday,
+
+        -- Last 2 days (today + yesterday)
+        COALESCE(SUM(CASE 
+            WHEN bill_date >= CURRENT_DATE - 1 
+            THEN billAmount 
+        END), 0) AS sales_last_2_days,
+
+        -- Previous 2 days
+        COALESCE(SUM(CASE
+            WHEN bill_date BETWEEN CURRENT_DATE - 3 AND CURRENT_DATE - 2
+            THEN billAmount
+        END), 0) AS sales_prev_2_days,
+
+        -- Last 7 days
+        COALESCE(SUM(CASE 
+            WHEN bill_date >= CURRENT_DATE - 6 
+            THEN billAmount 
+        END), 0) AS sales_last_7_days,
+
+        -- Previous 7 days
+        COALESCE(SUM(CASE
+            WHEN bill_date BETWEEN CURRENT_DATE - 13 AND CURRENT_DATE - 7
+            THEN billAmount
+        END), 0) AS sales_prev_7_days,
+
+        -- Last 1 month (~30 days)
+        COALESCE(SUM(CASE 
+            WHEN bill_date >= CURRENT_DATE - 30 
+            THEN billAmount 
+        END), 0) AS sales_last_1_month,
+
+        -- Previous 1 month
+        COALESCE(SUM(CASE
+            WHEN bill_date BETWEEN CURRENT_DATE - 60 AND CURRENT_DATE - 31
+            THEN billAmount
+        END), 0) AS sales_prev_1_month,
+
+        -- Last 90 days
+        COALESCE(SUM(CASE 
+            WHEN bill_date >= CURRENT_DATE - 90 
+            THEN billAmount 
+        END), 0) AS sales_last_90_days,
+
+        -- Previous 90 days
+        COALESCE(SUM(CASE
+            WHEN bill_date BETWEEN CURRENT_DATE - 180 AND CURRENT_DATE - 91
+            THEN billAmount
+        END), 0) AS sales_prev_90_days,
+
+        -- Lifetime sales
+        COALESCE(SUM(billAmount), 0) AS sales_lifetime
+
+    FROM base
+    GROUP BY storeId
     """,
     output_path=f"{GOLD_BASE}/sales_windows",
     kpi_name="Sales Windows"
