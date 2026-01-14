@@ -115,10 +115,10 @@ def main():
     query=f"""
         SELECT
             storeId,
-            DATE_TRUNC('month', createdAt) AS month,
+            strftime(createdAt, '%Y-%m') AS month,
             SUM(billAmount) AS total_sales
         FROM read_parquet('{SILVER_PATH}', union_by_name=True)
-        GROUP BY storeId, DATE_TRUNC('month', createdAt)
+        GROUP BY storeId, strftime(createdAt, '%Y-%m')
     """,
     output_path=f"{GOLD_BASE}/monthly_sales_trend",
     kpi_name="Monthly Sales Trend"
@@ -313,10 +313,10 @@ def main():
     query=f"""
         SELECT 
             storeId, 
-            MONTHNAME(createdAt) AS month_name,
+            strftime(createdAt, '%Y-%m'),
             COUNT(DISTINCT mobileNumber) AS no_of_customers
         FROM read_parquet('{SILVER_PATH}', union_by_name=true)
-        GROUP BY storeId, MONTHNAME(createdAt)
+        GROUP BY storeId, strftime(createdAt, '%Y-%m')
     """,
     output_path=f"{GOLD_BASE}/monthly_visits",
     kpi_name="Monthly Visits"
@@ -559,6 +559,7 @@ def main():
             SELECT
                 storeId,
                 mobileNumber,
+                name,
                 DATE(createdAt) AS bill_date,
                 billAmount
             FROM read_parquet('{SILVER_PATH}', union_by_name=true)
@@ -568,12 +569,13 @@ def main():
         customer_agg AS (
             SELECT
                 storeId,
+                name,
                 mobileNumber,
                 DATE_DIFF('day', MAX(bill_date), CURRENT_DATE) AS recency_days,
                 COUNT(*) AS frequency,
                 SUM(billAmount) AS monetary
             FROM base
-            GROUP BY storeId, mobileNumber
+            GROUP BY storeId, mobileNumber,name
         ),
         ranked AS (
             SELECT
@@ -612,6 +614,7 @@ def main():
         SELECT
             storeId,
             mobileNumber,
+            name,
             recency_days,
             frequency,
             monetary,
