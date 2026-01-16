@@ -717,8 +717,21 @@ def main():
     """,
     output_path=f"{GOLD_BASE}/cust_segment_spend",
     kpi_name="Customer Segment Spend"
-)
+)   
 
+        generate_kpi(con,
+                     query=
+                     f"""
+        SELECT
+        storeId,
+        strftime(createdAt, '%Y-%m') AS month,
+        AVG(billAmount) AS avearage_sales
+    FROM read_parquet('{SILVER_PATH}', union_by_name=True)
+    GROUP BY storeId, strftime(createdAt, '%Y-%m')
+                     """,
+                     output_path=f'{GOLD_BASE}/average_monthly_bill_value',
+                     kpi_name="average monthly bill value"
+                     )
         logger.info("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
         
     except Exception as e:
