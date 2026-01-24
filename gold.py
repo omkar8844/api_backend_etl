@@ -333,7 +333,7 @@ def main():
         SELECT 
             storeId, 
             strftime(createdAt, '%Y-%m') as month,
-            COUNT(DISTINCT billId) AS no_of_bills
+            COUNT(DISTINCT billId) AS "No. of Bills"
         FROM read_parquet('{SILVER_PATH}', union_by_name=true)
         GROUP BY storeId, strftime(createdAt, '%Y-%m')
     """,
