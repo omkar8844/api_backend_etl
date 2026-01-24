@@ -718,7 +718,9 @@ def main():
     output_path=f"{GOLD_BASE}/cust_segment_spend",
     kpi_name="Customer Segment Spend"
 )   
-
+# ---------------------------------------------------------
+# 1️⃣9 Average monthly spend
+# ---------------------------------------------------------
         generate_kpi(con,
                      query=
                      f"""
@@ -729,10 +731,85 @@ def main():
     FROM read_parquet('{SILVER_PATH}', union_by_name=True)
     GROUP BY storeId, strftime(createdAt, '%Y-%m')
                      """,
-                     output_path=f'{GOLD_BASE}/average_monthly_bill_value',
+                       output_path=f'{GOLD_BASE}/average_monthly_bill_value',
                      kpi_name="average monthly bill value"
                      )
+# ---------------------------------------------------------
+# 20 Inactive and active cust
+# ---------------------------------------------------------
+        generate_kpi(con,query=f"""
+                         WITH customer_last_visit AS (
+        SELECT
+            storeId,
+            mobileNumber,
+            name,
+            DATE(createdAt) AS last_visit_date,
+            ROW_NUMBER() OVER (
+                PARTITION BY mobileNumber
+                ORDER BY createdAt DESC
+            ) AS rn
+        FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+        WHERE LENGTH(mobileNumber) = 10
+          AND storeId IS NOT NULL
+    ),
+    latest_customer_record AS (
+        SELECT
+            storeId,
+            mobileNumber,
+            name,
+            last_visit_date
+        FROM customer_last_visit
+        WHERE rn = 1
+    )
+    SELECT
+        storeId,
+        name,
+        mobileNumber,
+        last_visit_date
+    FROM latest_customer_record
+    WHERE last_visit_date < CURRENT_DATE - 60
+
+                     """,output_path=f'{GOLD_BASE}/inactive_customers_60',
+                     kpi_name="inactive_cust")
+    
+
+        generate_kpi(con,query=f"""
+                     WITH customer_last_visit AS (
+        SELECT
+            storeId,
+            mobileNumber,
+            name,
+            DATE(createdAt) AS last_visit_date,
+            ROW_NUMBER() OVER (
+                PARTITION BY mobileNumber
+                ORDER BY createdAt DESC
+            ) AS rn
+        FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+        WHERE LENGTH(mobileNumber) = 10
+          AND storeId IS NOT NULL
+    ),
+    latest_customer_record AS (
+        SELECT
+            storeId,
+            mobileNumber,
+            name,
+            last_visit_date
+        FROM customer_last_visit
+        WHERE rn = 1
+    )
+    SELECT
+        storeId,
+        name,
+        mobileNumber,
+        last_visit_date
+    FROM latest_customer_record
+    WHERE last_visit_date >= CURRENT_DATE - 30
+                     """,output_path=f'{GOLD_BASE}/active_customers_30',
+                     kpi_name='active_customers_30d')
+    
+        
         logger.info("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
+    
         
     except Exception as e:
         logger.error(f"Gold layer ETL process failed: {e}", exc_info=True)
@@ -741,6 +818,8 @@ def main():
         if con:
             con.close()
             logger.info("DuckDB connection closed")
+
+
 
 
 if __name__ == "__main__":
