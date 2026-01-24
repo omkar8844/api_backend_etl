@@ -317,7 +317,7 @@ def main():
         SELECT 
             storeId, 
             strftime(createdAt, '%Y-%m'),
-            COUNT(DISTINCT mobileNumber) AS no_of_customers
+            COUNT(DISTINCT mobileNumber) AS "No of Customers"
         FROM read_parquet('{SILVER_PATH}', union_by_name=true)
         GROUP BY storeId, strftime(createdAt, '%Y-%m')
     """,
@@ -697,7 +697,7 @@ def main():
         SELECT 
             storeId,
             customer_segment,
-            COUNT(DISTINCT mobileNumber) AS count_of_customers
+            COUNT(DISTINCT mobileNumber) AS "Count of Customers"
         FROM read_parquet('{GOLD_BASE}/rfm_segments/*/data_0.parquet')
         GROUP BY storeId, customer_segment
     """,
@@ -713,10 +713,10 @@ def main():
         SELECT 
             storeId,
             customer_segment,
-            SUM(monetary) AS total_amount_spent
+            SUM(monetary) AS "Total Amount Spent"
         FROM read_parquet('{GOLD_BASE}/rfm_segments/*/data_0.parquet')
         GROUP BY storeId, customer_segment
-        ORDER BY storeId, total_amount_spent DESC
+        ORDER BY storeId DESC
     """,
     output_path=f"{GOLD_BASE}/cust_segment_spend",
     kpi_name="Customer Segment Spend"
