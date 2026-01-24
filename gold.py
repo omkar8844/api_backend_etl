@@ -245,6 +245,9 @@ def main():
 
 # ---------------------------------------------------------
 # 8️⃣ AVG_VISIT_WEEK_DAY
+# Calculates the average number of customer visits per weekday
+# (Monday, Tuesday, etc.) for each store. This helps identify
+# which days of the week are busiest for each store location.
 # ---------------------------------------------------------
         generate_kpi(con,
     query=f"""
@@ -719,7 +722,10 @@ def main():
     kpi_name="Customer Segment Spend"
 )   
 # ---------------------------------------------------------
-# 1️⃣9 Average monthly spend
+# 1️⃣9 AVERAGE MONTHLY BILL VALUE
+# Calculates the average bill amount per month for each store.
+# This KPI shows the trend of average transaction values over time,
+# helping identify if customers are spending more or less per transaction.
 # ---------------------------------------------------------
         generate_kpi(con,
                      query=
@@ -735,7 +741,9 @@ def main():
                      kpi_name="average monthly bill value"
                      )
 # ---------------------------------------------------------
-# 20 Inactive and active cust
+# 2️⃣0️⃣ INACTIVE CUSTOMERS (60 DAYS)
+# Identifies customers who have not visited any store in the last 60 days.
+# This helps identify customers who may have churned and need re-engagement.
 # ---------------------------------------------------------
         generate_kpi(con,query=f"""
                          WITH customer_last_visit AS (
@@ -773,6 +781,11 @@ def main():
                      kpi_name="inactive_cust")
     
 
+# ---------------------------------------------------------
+# 2️⃣1️⃣ ACTIVE CUSTOMERS (30 DAYS)
+# Identifies customers who have visited a store within the last 30 days.
+# This helps track recent customer engagement and active customer base.
+# ---------------------------------------------------------
         generate_kpi(con,query=f"""
                      WITH customer_last_visit AS (
         SELECT

@@ -17,6 +17,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Disable Azure SDK verbose logging
+logging.getLogger('azure.core.pipeline.policies.http_logging_policy').setLevel(logging.WARNING)
+logging.getLogger('azure.storage').setLevel(logging.WARNING)
+logging.getLogger('azure').setLevel(logging.WARNING)
+
 # Configuration
 AZURE_CONNECTION_STRING = os.getenv("AZURE_BLOB_CONN_STR")
 if not AZURE_CONNECTION_STRING:
@@ -41,7 +46,6 @@ try:
         INSTALL azure;
         LOAD azure;
     """)
-    logger.info("DuckDB Azure extension loaded successfully")
 except Exception as e:
     logger.error(f"Failed to initialize DuckDB Azure extension: {e}")
     raise
@@ -80,15 +84,9 @@ def get_last_load(collection_name: str) -> datetime:
     )
     stream = blob_client.download_blob()
     watermark_str = stream.readall().decode("utf-8").strip()
-    logger.info(f"Watermark found for {collection_name}: {watermark_str}")
-    
-    try:
-        watermark_dt = datetime.strptime(watermark_str, WATERMARK_DATE_FORMAT)
-        logger.info(f"Parsed watermark datetime for {collection_name}: {watermark_dt}")
-        return watermark_dt
-    except ValueError as e:
-        logger.error(f"Invalid watermark format for {collection_name}: {watermark_str}. Error: {e}")
-        raise ValueError(f"Invalid watermark format. Expected {WATERMARK_DATE_FORMAT}, got: {watermark_str}")
+    watermark_dt = datetime.strptime(watermark_str, WATERMARK_DATE_FORMAT)
+    logger.info(f"Current watermark for {collection_name}: {watermark_str}")
+    return watermark_dt
 
 
 def load_data() -> pd.DataFrame:
@@ -108,13 +106,27 @@ def load_data() -> pd.DataFrame:
     
     try:
         # Try to get watermarks for incremental load
-        logger.info("Attempting to load watermarks for incremental processing")
         br_w = get_last_load("billRequest")
         in_w = get_last_load("invoiceExtractedData")
         rec_w = get_last_load("receiptExtractedData")
         bt_w = get_last_load("billtransactions")
         
-        logger.info("Watermarks loaded successfully. Building incremental query.")
+        # Check if watermark matches max createdAt from source
+        try:
+            max_created_at_query = f"""
+                SELECT MAX(b.createdAt) AS max_created_at
+                FROM read_parquet('{billRequest}') b
+            """
+            max_created_at_df = con.execute(max_created_at_query).fetch_df()
+            if not max_created_at_df.empty and max_created_at_df['max_created_at'].iloc[0] is not None:
+                max_created_at = pd.to_datetime(max_created_at_df['max_created_at'].iloc[0])
+                # Compare with billRequest watermark (within 1 minute tolerance)
+                if abs((max_created_at - br_w).total_seconds()) < 60:
+                    logger.info(f"No data to load: Watermark ({br_w}) matches max createdAt ({max_created_at})")
+                    return pd.DataFrame()
+        except Exception:
+            # Silently proceed if check fails
+            pass
         query_join_bills = f"""
             SELECT 
                 b.billId, 
@@ -159,7 +171,7 @@ def load_data() -> pd.DataFrame:
         """
             
     except ResourceNotFoundError:
-        logger.info("No watermarks found. Performing full load.")
+        logger.info("FIRST LOAD: No watermarks found. Performing full load.")
         query_join_bills = f"""
             SELECT 
                 b.billId, 
@@ -194,12 +206,11 @@ def load_data() -> pd.DataFrame:
         raise
     
     try:
-        logger.info("Executing join query")
         bill_df = con.execute(query_join_bills).fetch_df()
         
         if not bill_df.empty:
             bill_df['load_time'] = now
-            logger.info(f"Successfully loaded {len(bill_df)} rows")
+            logger.info(f"Number of rows loaded: {len(bill_df)}")
         else:
             logger.info("No data returned from query")
             
@@ -225,16 +236,13 @@ def save_watermark(df: pd.DataFrame, name: str, load_time_col: str,
         if id_filter:
             df_filtered = df[df[id_filter].notna()].copy()
             if df_filtered.empty:
-                logger.warning(f"No valid timestamps for {name} (filtered by {id_filter}). Watermark not updated.")
                 return
             max_timestamp = df_filtered[load_time_col].max()
         else:
             if load_time_col not in df.columns:
-                logger.warning(f"Column '{load_time_col}' not found in DataFrame for {name}. Watermark not updated.")
                 return
             max_timestamp = df[load_time_col].max()
         
-        logger.info(f"Max load time for {name}: {max_timestamp}")
         watermark_blob_name = f"silver/{name}/watermark/{name}_trans_tm.txt"
         max_timestamp_str = str(max_timestamp)
         
@@ -242,7 +250,7 @@ def save_watermark(df: pd.DataFrame, name: str, load_time_col: str,
         text_buffer.seek(0)
         watermark_client = container_client.get_blob_client(watermark_blob_name)
         watermark_client.upload_blob(text_buffer.read(), overwrite=True)
-        logger.info(f"Watermark updated for {name}: {max_timestamp_str}")
+        logger.info(f"Updated watermark for {name}: {max_timestamp_str}")
         
     except Exception as e:
         logger.error(f"Failed to save watermark for {name}: {e}")
@@ -259,10 +267,8 @@ def upload_df(df: pd.DataFrame, name: str, partition_col: Optional[str] = None) 
         partition_col: Optional column name to partition by
     """
     if df.empty:
-        logger.warning(f"Empty DataFrame provided for {name}. Skipping upload.")
         return
     
-    logger.info(f"Uploading data for {name}")
     container_client = blob_service_client.get_container_client(CONTAINER_NAME)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     
@@ -273,11 +279,9 @@ def upload_df(df: pd.DataFrame, name: str, partition_col: Optional[str] = None) 
             df.to_parquet(buffer, index=False)
             buffer.seek(0)
             blob_name = f"silver/{name}/data/data_{timestamp}.parquet"
-            logger.debug(f"Uploading to: {blob_name}")
             
             blob_client = container_client.get_blob_client(blob_name)
             blob_client.upload_blob(buffer.read(), overwrite=True)
-            logger.info(f"Successfully uploaded to blob: {blob_name}")
         else:
             # Upload partitioned files
             for value, group in df.groupby(partition_col):
@@ -285,14 +289,11 @@ def upload_df(df: pd.DataFrame, name: str, partition_col: Optional[str] = None) 
                 group.to_parquet(buffer, index=False)
                 buffer.seek(0)  # Critical: Reset buffer position
                 blob_name = f"silver/{name}/data/{partition_col}={value}/data_{timestamp}.parquet"
-                logger.debug(f"Uploading partition {partition_col}={value} to: {blob_name}")
                 
                 blob_client = container_client.get_blob_client(blob_name)
                 blob_client.upload_blob(buffer.read(), overwrite=False)
-                logger.info(f"Successfully uploaded partition to blob: {blob_name}")
         
         # Update watermarks for each source collection
-        logger.info("Updating watermarks for source collections")
         save_watermark(df, 'billRequest', 'load_br', None, container_client)
         save_watermark(df, 'invoiceExtractedData', 'load_in', 'in_id', container_client)
         save_watermark(df, 'receiptExtractedData', 'load_rec', 'rec_id', container_client)
@@ -304,13 +305,17 @@ def upload_df(df: pd.DataFrame, name: str, partition_col: Optional[str] = None) 
     
 def main():
     """Main execution function for silver layer ETL."""
-    logger.info("Starting silver layer ETL process")
     
     try:
         df = load_data()
         if not df.empty:
+            # Ensure only unique billIds are saved
+            initial_count = len(df)
+            df = df.drop_duplicates(subset=['billId'], keep='first')
+            final_count = len(df)
+            if initial_count != final_count:
+                logger.info(f"Deduplication: Removed {initial_count - final_count} duplicate billIds. Rows before: {initial_count}, Rows after: {final_count}")
             upload_df(df=df, name="all_bills", partition_col='storeId')
-            logger.info("Silver layer ETL process completed successfully")
         else:
             logger.info("No data to process")
     except Exception as e:
@@ -318,7 +323,6 @@ def main():
         raise
     finally:
         con.close()
-        logger.info("DuckDB connection closed")
     
 if __name__ == "__main__":
     main()
