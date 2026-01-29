@@ -93,8 +93,8 @@ def main():
         # Generate all KPIs
 
         # ---------------------------------------------------------
-        # 1️⃣ DAILY SALES TREND
-        # ---------------------------------------------------------
+#         # 1️⃣ DAILY SALES TREND
+#         # ---------------------------------------------------------
 #         generate_kpi(con,
 #             query=f"""
 #         SELECT
@@ -823,40 +823,110 @@ def main():
         
 #         logger.info("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
     
-# ---------------------------------------------------------
-# 2️⃣2️⃣ repeat_customers
-# Identifies customers who have visited a store within the last 30 days.
-# This helps track recent customer engagement and active customer base.
-# ---------------------------------------------------------
-        generate_kpi(con,query=f"""
-                     WITH customer_visits AS (
-        SELECT
-            storeId,
-            mobileNumber,
-            name,
-            createdAt,
-            COUNT(*) OVER (
-                PARTITION BY storeId, mobileNumber
-            ) AS visit_count,
-            ROW_NUMBER() OVER (
-                PARTITION BY storeId, mobileNumber
-                ORDER BY createdAt DESC
-            ) AS rn
-        FROM read_parquet('{SILVER_PATH}', union_by_name=true)
-        WHERE LENGTH(mobileNumber) = 10
-          AND storeId IS NOT NULL
-    )
-    SELECT
-        storeId,
-        name,
-        mobileNumber,
-        visit_count
-    FROM customer_visits
-    WHERE visit_count > 1
-      AND rn = 1
-                     """,output_path=f'{GOLD_BASE}/repeat_customers_name_and_number',
-                     kpi_name='reapeat_customers_name')
+# # ---------------------------------------------------------
+# # 2️⃣2️⃣ repeat_customers
+# # Identifies customers who have visited a store within the last 30 days.
+# # This helps track recent customer engagement and active customer base.
+# # ---------------------------------------------------------
+#         generate_kpi(con,query=f"""
+#                      WITH customer_visits AS (
+#         SELECT
+#             storeId,
+#             mobileNumber,
+#             name,
+#             createdAt,
+#             COUNT(*) OVER (
+#                 PARTITION BY storeId, mobileNumber
+#             ) AS visit_count,
+#             ROW_NUMBER() OVER (
+#                 PARTITION BY storeId, mobileNumber
+#                 ORDER BY createdAt DESC
+#             ) AS rn
+#         FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+#         WHERE LENGTH(mobileNumber) = 10
+#           AND storeId IS NOT NULL
+#     )
+#     SELECT
+#         storeId,
+#         name,
+#         mobileNumber,
+#         visit_count
+#     FROM customer_visits
+#     WHERE visit_count > 1
+#       AND rn = 1
+#                      """,output_path=f'{GOLD_BASE}/repeat_customers_name_and_number',
+#                      kpi_name='active_customers_30d')
     
+    
+# ---------------------------------------------------------
+# 2️3 sales_trend_date_hour
+        generate_kpi(con,query=f"""
+        SELECT
+        storeId,
+
+        -- Base time grain
+        DATE(createdAt) AS sale_date,
+        EXTRACT(hour FROM createdAt) AS sale_hour,
+
+        -- Time dimensions
+        EXTRACT(year FROM createdAt) AS year,
+        EXTRACT(quarter FROM createdAt) AS quarter,
+        EXTRACT(month FROM createdAt) AS month,
+        STRFTIME(createdAt, '%Y-%m') AS year_month,
+        EXTRACT(week FROM createdAt) AS week,
+
+        -- Metrics
+        SUM(billAmount) AS total_sales,
+        COUNT(*) AS bill_count
+
+    FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+    WHERE storeId IS NOT NULL
+    GROUP BY
+        storeId,
+        DATE(createdAt),
+        EXTRACT(hour FROM createdAt),
+        EXTRACT(year FROM createdAt),
+        EXTRACT(quarter FROM createdAt),
+        EXTRACT(month FROM createdAt),
+        STRFTIME(createdAt, '%Y-%m'),
+        EXTRACT(week FROM createdAt)             
+                             """,output_path=f'{GOLD_BASE}/sales_trend_date_hour',
+                     kpi_name='sales_trend_date_hour')
+# ---------------------------------------------------------
+# 2️4 sales_trend_date_hour
+        generate_kpi(con,query=f"""
+                         SELECT
+        storeId,
+
+        -- Base time grain
+        DATE(createdAt) AS visit_date,
+        EXTRACT(hour FROM createdAt) AS visit_hour,
+
+        -- Time dimensions
+        EXTRACT(year FROM createdAt) AS year,
+        EXTRACT(quarter FROM createdAt) AS quarter,
+        EXTRACT(month FROM createdAt) AS month,
+        STRFTIME(createdAt, '%Y-%m') AS year_month,
+        EXTRACT(week FROM createdAt) AS week,
+
+        -- Metrics
+        COUNT(DISTINCT mobileNumber) AS visitor_count
+
+    FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+    WHERE storeId IS NOT NULL
+      AND LENGTH(mobileNumber) = 10
+    GROUP BY
+        storeId,
+        DATE(createdAt),
+        EXTRACT(hour FROM createdAt),
+        EXTRACT(year FROM createdAt),
+        EXTRACT(quarter FROM createdAt),
+        EXTRACT(month FROM createdAt),
+        STRFTIME(createdAt, '%Y-%m'),
+        EXTRACT(week FROM createdAt)
+                     """,output_path=f'{GOLD_BASE}/visitor_trend_date_hour',
+                     kpi_name='visitor_trend_date_hour')
+
         
         logger.info("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
 
