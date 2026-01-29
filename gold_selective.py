@@ -689,39 +689,39 @@ def main():
 # )
 
 
-# ---------------------------------------------------------
-# 1️⃣7️⃣ CUSTOMER SEGMENT COUNT
-# ---------------------------------------------------------
-        generate_kpi(con,
-    query=f"""
-        SELECT 
-            storeId,
-            customer_segment,
-            COUNT(DISTINCT mobileNumber) AS "Count of Customers"
-        FROM read_parquet('{GOLD_BASE}/rfm_segments/*/data_0.parquet')
-        GROUP BY storeId, customer_segment
-    """,
-    output_path=f"{GOLD_BASE}/cust_segment_count",
-    kpi_name="Customer Segment Count"
-)
+# # ---------------------------------------------------------
+# # 1️⃣7️⃣ CUSTOMER SEGMENT COUNT
+# # ---------------------------------------------------------
+#         generate_kpi(con,
+#     query=f"""
+#         SELECT 
+#             storeId,
+#             customer_segment,
+#             COUNT(DISTINCT mobileNumber) AS "Count of Customers"
+#         FROM read_parquet('{GOLD_BASE}/rfm_segments/*/data_0.parquet')
+#         GROUP BY storeId, customer_segment
+#     """,
+#     output_path=f"{GOLD_BASE}/cust_segment_count",
+#     kpi_name="Customer Segment Count"
+# )
 
-# ---------------------------------------------------------
-# 1️⃣8️⃣ CUSTOMER SEGMENT SPEND
-# ---------------------------------------------------------
-        generate_kpi(con,
-    query=f"""
-        SELECT 
-            storeId,
-            customer_segment,
-            SUM(monetary) AS "Total Amount Spent"
-        FROM read_parquet('{GOLD_BASE}/rfm_segments/*/data_0.parquet')
-        GROUP BY storeId, customer_segment
-        ORDER BY storeId DESC
-    """,
-    output_path=f"{GOLD_BASE}/cust_segment_spend",
-    kpi_name="Customer Segment Spend"
-)   
-# ---------------------------------------------------------
+# # ---------------------------------------------------------
+# # 1️⃣8️⃣ CUSTOMER SEGMENT SPEND
+# # ---------------------------------------------------------
+#         generate_kpi(con,
+#     query=f"""
+#         SELECT 
+#             storeId,
+#             customer_segment,
+#             SUM(monetary) AS "Total Amount Spent"
+#         FROM read_parquet('{GOLD_BASE}/rfm_segments/*/data_0.parquet')
+#         GROUP BY storeId, customer_segment
+#         ORDER BY storeId DESC
+#     """,
+#     output_path=f"{GOLD_BASE}/cust_segment_spend",
+#     kpi_name="Customer Segment Spend"
+# )   
+# # ---------------------------------------------------------
 # # 1️⃣9 AVERAGE MONTHLY BILL VALUE
 # # Calculates the average bill amount per month for each store.
 # # This KPI shows the trend of average transaction values over time,
@@ -823,7 +823,45 @@ def main():
         
 #         logger.info("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
     
+# ---------------------------------------------------------
+# 2️⃣2️⃣ repeat_customers
+# Identifies customers who have visited a store within the last 30 days.
+# This helps track recent customer engagement and active customer base.
+# ---------------------------------------------------------
+        generate_kpi(con,query=f"""
+                     WITH customer_visits AS (
+        SELECT
+            storeId,
+            mobileNumber,
+            name,
+            createdAt,
+            COUNT(*) OVER (
+                PARTITION BY storeId, mobileNumber
+            ) AS visit_count,
+            ROW_NUMBER() OVER (
+                PARTITION BY storeId, mobileNumber
+                ORDER BY createdAt DESC
+            ) AS rn
+        FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+        WHERE LENGTH(mobileNumber) = 10
+          AND storeId IS NOT NULL
+    )
+    SELECT
+        storeId,
+        name,
+        mobileNumber,
+        visit_count
+    FROM customer_visits
+    WHERE visit_count > 1
+      AND rn = 1
+                     """,output_path=f'{GOLD_BASE}/repeat_customers_name_and_number',
+                     kpi_name='reapeat_customers_name')
+    
         
+        logger.info("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
+
+
+ 
     except Exception as e:
         logger.error(f"Gold layer ETL process failed: {e}", exc_info=True)
         raise
@@ -831,7 +869,6 @@ def main():
         if con:
             con.close()
             logger.info("DuckDB connection closed")
-
 
 
 

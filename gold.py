@@ -823,7 +823,45 @@ def main():
         
         logger.info("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
     
+# ---------------------------------------------------------
+# 2️⃣2️⃣ repeat_customers
+# Identifies customers who have visited a store within the last 30 days.
+# This helps track recent customer engagement and active customer base.
+# ---------------------------------------------------------
+        generate_kpi(con,query=f"""
+                     WITH customer_visits AS (
+        SELECT
+            storeId,
+            mobileNumber,
+            name,
+            createdAt,
+            COUNT(*) OVER (
+                PARTITION BY storeId, mobileNumber
+            ) AS visit_count,
+            ROW_NUMBER() OVER (
+                PARTITION BY storeId, mobileNumber
+                ORDER BY createdAt DESC
+            ) AS rn
+        FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+        WHERE LENGTH(mobileNumber) = 10
+          AND storeId IS NOT NULL
+    )
+    SELECT
+        storeId,
+        name,
+        mobileNumber,
+        visit_count
+    FROM customer_visits
+    WHERE visit_count > 1
+      AND rn = 1
+                     """,output_path=f'{GOLD_BASE}/repeat_customers_name_and_number',
+                     kpi_name='active_customers_30d')
+    
         
+        logger.info("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
+
+
+ 
     except Exception as e:
         logger.error(f"Gold layer ETL process failed: {e}", exc_info=True)
         raise
@@ -831,7 +869,6 @@ def main():
         if con:
             con.close()
             logger.info("DuckDB connection closed")
-
 
 
 
