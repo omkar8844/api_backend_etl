@@ -926,6 +926,89 @@ def main():
         EXTRACT(week FROM createdAt)
                      """,output_path=f'{GOLD_BASE}/visitor_trend_date_hour',
                      kpi_name='visitor_trend_date_hour')
+        
+# ---------------------------------------------------------
+# 2️4 sales_count_window
+        generate_kpi(con,query=f"""
+                        WITH base AS (
+        SELECT
+            storeId,
+            DATE(createdAt) AS visit_date,
+            mobileNumber
+        FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+        WHERE storeId IS NOT NULL
+          AND LENGTH(mobileNumber) = 10
+    )
+    SELECT
+        storeId,
+
+        -- Today
+        COUNT(DISTINCT CASE
+            WHEN visit_date = CURRENT_DATE
+            THEN mobileNumber
+        END) AS customers_today,
+
+        -- Yesterday
+        COUNT(DISTINCT CASE
+            WHEN visit_date = CURRENT_DATE - 1
+            THEN mobileNumber
+        END) AS customers_yesterday,
+
+        -- Last 2 days (today + yesterday)
+        COUNT(DISTINCT CASE
+            WHEN visit_date >= CURRENT_DATE - 1
+            THEN mobileNumber
+        END) AS customers_last_2_days,
+
+        -- Previous 2 days
+        COUNT(DISTINCT CASE
+            WHEN visit_date BETWEEN CURRENT_DATE - 3 AND CURRENT_DATE - 2
+            THEN mobileNumber
+        END) AS customers_prev_2_days,
+
+        -- Last 7 days
+        COUNT(DISTINCT CASE
+            WHEN visit_date >= CURRENT_DATE - 6
+            THEN mobileNumber
+        END) AS customers_last_7_days,
+
+        -- Previous 7 days
+        COUNT(DISTINCT CASE
+            WHEN visit_date BETWEEN CURRENT_DATE - 13 AND CURRENT_DATE - 7
+            THEN mobileNumber
+        END) AS customers_prev_7_days,
+
+        -- Last 1 month (~30 days)
+        COUNT(DISTINCT CASE
+            WHEN visit_date >= CURRENT_DATE - 30
+            THEN mobileNumber
+        END) AS customers_last_1_month,
+
+        -- Previous 1 month
+        COUNT(DISTINCT CASE
+            WHEN visit_date BETWEEN CURRENT_DATE - 60 AND CURRENT_DATE - 31
+            THEN mobileNumber
+        END) AS customers_prev_1_month,
+
+        -- Last 90 days
+        COUNT(DISTINCT CASE
+            WHEN visit_date >= CURRENT_DATE - 90
+            THEN mobileNumber
+        END) AS customers_last_90_days,
+
+        -- Previous 90 days
+        COUNT(DISTINCT CASE
+            WHEN visit_date BETWEEN CURRENT_DATE - 180 AND CURRENT_DATE - 91
+            THEN mobileNumber
+        END) AS customers_prev_90_days,
+
+        -- Lifetime distinct customers
+        COUNT(DISTINCT mobileNumber) AS customers_lifetime
+
+    FROM base
+    GROUP BY storeId
+                     """,output_path=f'{GOLD_BASE}/customer_visit_windows_dev',
+                     kpi_name='customer_visit_windows_dev')
 
         
         logger.info("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
