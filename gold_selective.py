@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 # ---------------- CONFIG ----------------
 SILVER_PATH = "az://clean-data/silver/all_bills/data/*/*.parquet"
+SILVER_PATH_ITEMS = "az://clean-data/silver/all_items/data/*.parquet"
 GOLD_BASE = "az://clean-data/gold"
 BLOB_CONN_ENV = "AZURE_BLOB_CONN_STR"
 # ----------------------------------------
@@ -858,75 +859,264 @@ def main():
 #                      kpi_name='active_customers_30d')
     
     
+# # ---------------------------------------------------------
+# # 2️3 sales_trend_date_hour
+#         generate_kpi(con,query=f"""
+#         SELECT
+#         storeId,
+
+#         -- Base time grain
+#         DATE(createdAt) AS sale_date,
+#         EXTRACT(hour FROM createdAt) AS sale_hour,
+
+#         -- Time dimensions
+#         EXTRACT(year FROM createdAt) AS year,
+#         EXTRACT(quarter FROM createdAt) AS quarter,
+#         EXTRACT(month FROM createdAt) AS month,
+#         STRFTIME(createdAt, '%Y-%m') AS year_month,
+#         EXTRACT(week FROM createdAt) AS week,
+
+#         -- Metrics
+#         SUM(billAmount) AS total_sales,
+#         COUNT(*) AS bill_count
+
+#     FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+#     WHERE storeId IS NOT NULL
+#     GROUP BY
+#         storeId,
+#         DATE(createdAt),
+#         EXTRACT(hour FROM createdAt),
+#         EXTRACT(year FROM createdAt),
+#         EXTRACT(quarter FROM createdAt),
+#         EXTRACT(month FROM createdAt),
+#         STRFTIME(createdAt, '%Y-%m'),
+#         EXTRACT(week FROM createdAt)             
+#                              """,output_path=f'{GOLD_BASE}/sales_trend_date_hour',
+#                      kpi_name='sales_trend_date_hour')
+# # ---------------------------------------------------------
+# # 2️3 sales_trend_date_hour
+#         generate_kpi(con,query=f"""
+#                          SELECT
+#         storeId,
+
+#         -- Base time grain
+#         DATE(createdAt) AS visit_date,
+#         EXTRACT(hour FROM createdAt) AS visit_hour,
+
+#         -- Time dimensions
+#         EXTRACT(year FROM createdAt) AS year,
+#         EXTRACT(quarter FROM createdAt) AS quarter,
+#         EXTRACT(month FROM createdAt) AS month,
+#         STRFTIME(createdAt, '%Y-%m') AS year_month,
+#         EXTRACT(week FROM createdAt) AS week,
+
+#         -- Metrics
+#         COUNT(DISTINCT mobileNumber) AS visitor_count
+
+#     FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+#     WHERE storeId IS NOT NULL
+#       AND LENGTH(mobileNumber) = 10
+#     GROUP BY
+#         storeId,
+#         DATE(createdAt),
+#         EXTRACT(hour FROM createdAt),
+#         EXTRACT(year FROM createdAt),
+#         EXTRACT(quarter FROM createdAt),
+#         EXTRACT(month FROM createdAt),
+#         STRFTIME(createdAt, '%Y-%m'),
+#         EXTRACT(week FROM createdAt)
+#                      """,output_path=f'{GOLD_BASE}/visitor_trend_date_hour',
+#                      kpi_name='visitor_trend_date_hour')
+        
+# # ---------------------------------------------------------
+# # 2️4 sales_count_window
+#         generate_kpi(con,query=f"""
+#                         WITH base AS (
+#         SELECT
+#             storeId,
+#             DATE(createdAt) AS visit_date,
+#             mobileNumber
+#         FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+#         WHERE storeId IS NOT NULL
+#           AND LENGTH(mobileNumber) = 10
+#     )
+#     SELECT
+#         storeId,
+
+#         -- Today
+#         COUNT(DISTINCT CASE
+#             WHEN visit_date = CURRENT_DATE
+#             THEN mobileNumber
+#         END) AS customers_today,
+
+#         -- Yesterday
+#         COUNT(DISTINCT CASE
+#             WHEN visit_date = CURRENT_DATE - 1
+#             THEN mobileNumber
+#         END) AS customers_yesterday,
+
+#         -- Last 2 days (today + yesterday)
+#         COUNT(DISTINCT CASE
+#             WHEN visit_date >= CURRENT_DATE - 1
+#             THEN mobileNumber
+#         END) AS customers_last_2_days,
+
+#         -- Previous 2 days
+#         COUNT(DISTINCT CASE
+#             WHEN visit_date BETWEEN CURRENT_DATE - 3 AND CURRENT_DATE - 2
+#             THEN mobileNumber
+#         END) AS customers_prev_2_days,
+
+#         -- Last 7 days
+#         COUNT(DISTINCT CASE
+#             WHEN visit_date >= CURRENT_DATE - 6
+#             THEN mobileNumber
+#         END) AS customers_last_7_days,
+
+#         -- Previous 7 days
+#         COUNT(DISTINCT CASE
+#             WHEN visit_date BETWEEN CURRENT_DATE - 13 AND CURRENT_DATE - 7
+#             THEN mobileNumber
+#         END) AS customers_prev_7_days,
+
+#         -- Last 1 month (~30 days)
+#         COUNT(DISTINCT CASE
+#             WHEN visit_date >= CURRENT_DATE - 30
+#             THEN mobileNumber
+#         END) AS customers_last_1_month,
+
+#         -- Previous 1 month
+#         COUNT(DISTINCT CASE
+#             WHEN visit_date BETWEEN CURRENT_DATE - 60 AND CURRENT_DATE - 31
+#             THEN mobileNumber
+#         END) AS customers_prev_1_month,
+
+#         -- Last 90 days
+#         COUNT(DISTINCT CASE
+#             WHEN visit_date >= CURRENT_DATE - 90
+#             THEN mobileNumber
+#         END) AS customers_last_90_days,
+
+#         -- Previous 90 days
+#         COUNT(DISTINCT CASE
+#             WHEN visit_date BETWEEN CURRENT_DATE - 180 AND CURRENT_DATE - 91
+#             THEN mobileNumber
+#         END) AS customers_prev_90_days,
+
+#         -- Lifetime distinct customers
+#         COUNT(DISTINCT mobileNumber) AS customers_lifetime
+
+#     FROM base
+#     GROUP BY storeId
+#                      """,output_path=f'{GOLD_BASE}/customer_visit_windows_dev',
+#                      kpi_name='customer_visit_windows_dev')
+
+
+        
+# # ---------------------------------------------------------
+# # 2️5 Product by qt
+#         generate_kpi(con,query=f"""
+#             select storeId,itemName ,count(itemName) as "No. Times Sold" from
+#             (
+#               SELECT DISTINCT ON (billId, createdAt, itemName) 
+#             * from read_parquet('{SILVER_PATH_ITEMS}',union_by_name=True) 
+#             where itemName<> '' or itemName<> 'None'
+#             ) 
+#             group by storeId, itemName
+#             order by storeId, 3 desc
+
+#                      """,output_path=f'{GOLD_BASE}/top_prods_by_qt',
+#                      kpi_name='most_sold_products')
+        
 # ---------------------------------------------------------
-# 2️3 sales_trend_date_hour
+# ---------------------------------------------------------
+# 2️6 Product by sales
         generate_kpi(con,query=f"""
+    SELECT storeId,
+    itemName,
+       SUM(CAST(itemPrice AS DOUBLE)) AS "Product Sale"
+FROM (
+    SELECT DISTINCT billId, createdAt, itemName, storeId, itemPrice
+    FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=True)
+    WHERE itemName <> ''
+      AND REGEXP_MATCHES(itemPrice, '^[0-9]+(\.[0-9]+)?$')
+)
+GROUP BY storeId, itemName
+ORDER BY storeId, "Product Sale" DESC
+                     """,output_path=f'{GOLD_BASE}/top_prods_by_sales',
+                     kpi_name='most_saling_products')# ---------------------------------------------------------
+# 2️7 Product basket
+        generate_kpi(con,query=f"""
+                WITH base_items AS (
+        SELECT DISTINCT
+            storeId,
+            billId,
+            createdAt,
+            itemName
+        FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=true)
+        WHERE itemName <> ''
+          AND storeId IS NOT NULL
+    ),
+    basket AS (
         SELECT
+            storeId,
+            billId,
+            createdAt,
+            ARRAY_SORT(ARRAY_AGG(itemName)) AS item_combination,
+            COUNT(*) AS item_count
+        FROM base_items
+        GROUP BY storeId, billId, createdAt
+        HAVING COUNT(*) >= 2   -- 🔑 only real combinations
+    )
+    SELECT
         storeId,
+        item_combination,
+        item_count,
+        COUNT(*) AS combination_count
+    FROM basket
+    GROUP BY storeId, item_combination, item_count
+    ORDER BY storeId, combination_count DESC
 
-        -- Base time grain
-        DATE(createdAt) AS sale_date,
-        EXTRACT(hour FROM createdAt) AS sale_hour,
+                     """,output_path=f'{GOLD_BASE}/product_basket',
+                     kpi_name='product_basket')
 
-        -- Time dimensions
-        EXTRACT(year FROM createdAt) AS year,
-        EXTRACT(quarter FROM createdAt) AS quarter,
-        EXTRACT(month FROM createdAt) AS month,
-        STRFTIME(createdAt, '%Y-%m') AS year_month,
-        EXTRACT(week FROM createdAt) AS week,
 
-        -- Metrics
-        SUM(billAmount) AS total_sales,
-        COUNT(*) AS bill_count
-
-    FROM read_parquet('{SILVER_PATH}', union_by_name=true)
-    WHERE storeId IS NOT NULL
-    GROUP BY
-        storeId,
-        DATE(createdAt),
-        EXTRACT(hour FROM createdAt),
-        EXTRACT(year FROM createdAt),
-        EXTRACT(quarter FROM createdAt),
-        EXTRACT(month FROM createdAt),
-        STRFTIME(createdAt, '%Y-%m'),
-        EXTRACT(week FROM createdAt)             
-                             """,output_path=f'{GOLD_BASE}/sales_trend_date_hour',
-                     kpi_name='sales_trend_date_hour')
 # ---------------------------------------------------------
-# 2️4 sales_trend_date_hour
+# 2️7 Product pairs
         generate_kpi(con,query=f"""
-                         SELECT
+    WITH base_items AS (
+        SELECT DISTINCT
+            storeId,
+            billId,
+            createdAt,
+            itemName
+        FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=true)
+        WHERE itemName <> ''
+          AND storeId IS NOT NULL
+    ),
+    item_pairs AS (
+        SELECT
+            a.storeId,
+            a.itemName AS product_a,
+            b.itemName AS product_b
+        FROM base_items a
+        JOIN base_items b
+          ON a.storeId = b.storeId
+         AND a.billId = b.billId
+         AND a.createdAt = b.createdAt
+         AND a.itemName < b.itemName   -- 🔑 avoid duplicate & self pairs
+    )
+    SELECT
         storeId,
+        product_a,
+        product_b,
+        COUNT(*) AS pair_count
+    FROM item_pairs
+    GROUP BY storeId, product_a, product_b
+    ORDER BY storeId, pair_count DESC
 
-        -- Base time grain
-        DATE(createdAt) AS visit_date,
-        EXTRACT(hour FROM createdAt) AS visit_hour,
-
-        -- Time dimensions
-        EXTRACT(year FROM createdAt) AS year,
-        EXTRACT(quarter FROM createdAt) AS quarter,
-        EXTRACT(month FROM createdAt) AS month,
-        STRFTIME(createdAt, '%Y-%m') AS year_month,
-        EXTRACT(week FROM createdAt) AS week,
-
-        -- Metrics
-        COUNT(DISTINCT mobileNumber) AS visitor_count
-
-    FROM read_parquet('{SILVER_PATH}', union_by_name=true)
-    WHERE storeId IS NOT NULL
-      AND LENGTH(mobileNumber) = 10
-    GROUP BY
-        storeId,
-        DATE(createdAt),
-        EXTRACT(hour FROM createdAt),
-        EXTRACT(year FROM createdAt),
-        EXTRACT(quarter FROM createdAt),
-        EXTRACT(month FROM createdAt),
-        STRFTIME(createdAt, '%Y-%m'),
-        EXTRACT(week FROM createdAt)
-                     """,output_path=f'{GOLD_BASE}/visitor_trend_date_hour',
-                     kpi_name='visitor_trend_date_hour')
-
+                     """,output_path=f'{GOLD_BASE}/Product_Pairs',
+                     kpi_name='Product_Pairs')
         
         logger.info("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
 

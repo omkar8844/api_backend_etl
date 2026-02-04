@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 # ---------------- CONFIG ----------------
 SILVER_PATH = "az://clean-data/silver/all_bills/data/*/*.parquet"
+SILVER_PATH_ITEMS = "az://clean-data/silver/all_items/data/*.parquet"
 GOLD_BASE = "az://clean-data/gold"
 BLOB_CONN_ENV = "AZURE_BLOB_CONN_STR"
 # ----------------------------------------
@@ -1010,6 +1011,113 @@ def main():
                      """,output_path=f'{GOLD_BASE}/customer_visit_windows_dev',
                      kpi_name='customer_visit_windows_dev')
 
+
+        
+# ---------------------------------------------------------
+# 2️5 Product by qt
+        generate_kpi(con,query=f"""
+            select storeId,itemName ,count(itemName) as "No. Times Sold" from
+            (
+              SELECT DISTINCT ON (billId, createdAt, itemName) 
+            * from read_parquet('{SILVER_PATH_ITEMS}',union_by_name=True) 
+            where itemName<> '' or itemName<> 'None'
+            ) 
+            group by storeId, itemName
+            order by storeId, 3 desc
+
+                     """,output_path=f'{GOLD_BASE}/top_prods_by_qt',
+                     kpi_name='most_sold_products')
+        
+# ---------------------------------------------------------
+# 2️6 Product by sales
+        generate_kpi(con,query=f"""
+    SELECT storeId,
+    itemName,
+       SUM(CAST(itemPrice AS DOUBLE)) AS "Product Sale"
+FROM (
+    SELECT DISTINCT billId, createdAt, itemName, storeId, itemPrice
+    FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=True)
+    WHERE itemName <> ''
+      AND REGEXP_MATCHES(itemPrice, '^[0-9]+(\.[0-9]+)?$')
+)
+GROUP BY storeId, itemName
+ORDER BY storeId, "Product Sale" DESC
+                     """,output_path=f'{GOLD_BASE}/top_prods_by_sales',
+                     kpi_name='most_saling_products')
+
+# ---------------------------------------------------------
+# 2️7 Product basket
+        generate_kpi(con,query=f"""
+                WITH base_items AS (
+        SELECT DISTINCT
+            storeId,
+            billId,
+            createdAt,
+            itemName
+        FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=true)
+        WHERE itemName <> ''
+          AND storeId IS NOT NULL
+    ),
+    basket AS (
+        SELECT
+            storeId,
+            billId,
+            createdAt,
+            ARRAY_SORT(ARRAY_AGG(itemName)) AS item_combination,
+            COUNT(*) AS item_count
+        FROM base_items
+        GROUP BY storeId, billId, createdAt
+        HAVING COUNT(*) >= 2   -- 🔑 only real combinations
+    )
+    SELECT
+        storeId,
+        item_combination,
+        item_count,
+        COUNT(*) AS combination_count
+    FROM basket
+    GROUP BY storeId, item_combination, item_count
+    ORDER BY storeId, combination_count DESC
+
+                     """,output_path=f'{GOLD_BASE}/product_basket',
+                     kpi_name='product_basket')
+
+
+# ---------------------------------------------------------
+# 2️7 Product pairs
+        generate_kpi(con,query=f"""
+    WITH base_items AS (
+        SELECT DISTINCT
+            storeId,
+            billId,
+            createdAt,
+            itemName
+        FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=true)
+        WHERE itemName <> ''
+          AND storeId IS NOT NULL
+    ),
+    item_pairs AS (
+        SELECT
+            a.storeId,
+            a.itemName AS product_a,
+            b.itemName AS product_b
+        FROM base_items a
+        JOIN base_items b
+          ON a.storeId = b.storeId
+         AND a.billId = b.billId
+         AND a.createdAt = b.createdAt
+         AND a.itemName < b.itemName   -- 🔑 avoid duplicate & self pairs
+    )
+    SELECT
+        storeId,
+        product_a,
+        product_b,
+        COUNT(*) AS pair_count
+    FROM item_pairs
+    GROUP BY storeId, product_a, product_b
+    ORDER BY storeId, pair_count DESC
+
+                     """,output_path=f'{GOLD_BASE}/Product_Pairs',
+                     kpi_name='Product_Pairs')
         
         logger.info("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
 
