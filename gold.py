@@ -1118,6 +1118,27 @@ ORDER BY storeId, "Product Sale" DESC
 
                      """,output_path=f'{GOLD_BASE}/Product_Pairs',
                      kpi_name='Product_Pairs')
+
+
+# ---------------------------------------------------------
+# 2️7 Product pairs
+        generate_kpi(con,query=f"""
+        SELECT storeId, itemName, COUNT(*) AS "Times Sold"
+    FROM (
+        SELECT DISTINCT billId, createdAt, itemName, storeId
+        FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=True)
+        WHERE itemName <> '' 
+          AND itemName <> 'None'
+          AND strftime(createdAt, '%Y-%m') = (
+              SELECT max(strftime(createdAt, '%Y-%m'))
+              FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=True)
+          )
+    )
+    GROUP BY storeId, itemName
+    ORDER BY storeId, "Times Sold" DESC
+
+                     """,output_path=f'{GOLD_BASE}/product_quantity_this_month',
+                     kpi_name='product_quantity_this_month')
         
         logger.info("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
 

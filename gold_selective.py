@@ -1029,94 +1029,114 @@ def main():
 #                      kpi_name='most_sold_products')
         
 # ---------------------------------------------------------
-# ---------------------------------------------------------
-# 2️6 Product by sales
-        generate_kpi(con,query=f"""
-    SELECT storeId,
-    itemName,
-       SUM(CAST(itemPrice AS DOUBLE)) AS "Product Sale"
-FROM (
-    SELECT DISTINCT billId, createdAt, itemName, storeId, itemPrice
-    FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=True)
-    WHERE itemName <> ''
-      AND REGEXP_MATCHES(itemPrice, '^[0-9]+(\.[0-9]+)?$')
-)
-GROUP BY storeId, itemName
-ORDER BY storeId, "Product Sale" DESC
-                     """,output_path=f'{GOLD_BASE}/top_prods_by_sales',
-                     kpi_name='most_saling_products')# ---------------------------------------------------------
-# 2️7 Product basket
-        generate_kpi(con,query=f"""
-                WITH base_items AS (
-        SELECT DISTINCT
-            storeId,
-            billId,
-            createdAt,
-            itemName
-        FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=true)
-        WHERE itemName <> ''
-          AND storeId IS NOT NULL
-    ),
-    basket AS (
-        SELECT
-            storeId,
-            billId,
-            createdAt,
-            ARRAY_SORT(ARRAY_AGG(itemName)) AS item_combination,
-            COUNT(*) AS item_count
-        FROM base_items
-        GROUP BY storeId, billId, createdAt
-        HAVING COUNT(*) >= 2   -- 🔑 only real combinations
-    )
-    SELECT
-        storeId,
-        item_combination,
-        item_count,
-        COUNT(*) AS combination_count
-    FROM basket
-    GROUP BY storeId, item_combination, item_count
-    ORDER BY storeId, combination_count DESC
+# # ---------------------------------------------------------
+# # 2️6 Product by sales
+#         generate_kpi(con,query=f"""
+#     SELECT storeId,
+#     itemName,
+#        SUM(CAST(itemPrice AS DOUBLE)) AS "Product Sale"
+# FROM (
+#     SELECT DISTINCT billId, createdAt, itemName, storeId, itemPrice
+#     FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=True)
+#     WHERE itemName <> ''
+#       AND REGEXP_MATCHES(itemPrice, '^[0-9]+(\.[0-9]+)?$')
+# )
+# GROUP BY storeId, itemName
+# ORDER BY storeId, "Product Sale" DESC
+#                      """,output_path=f'{GOLD_BASE}/top_prods_by_sales',
+#                      kpi_name='most_saling_products')# ---------------------------------------------------------
+# # 2️7 Product basket
+#         generate_kpi(con,query=f"""
+#                 WITH base_items AS (
+#         SELECT DISTINCT
+#             storeId,
+#             billId,
+#             createdAt,
+#             itemName
+#         FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=true)
+#         WHERE itemName <> ''
+#           AND storeId IS NOT NULL
+#     ),
+#     basket AS (
+#         SELECT
+#             storeId,
+#             billId,
+#             createdAt,
+#             ARRAY_SORT(ARRAY_AGG(itemName)) AS item_combination,
+#             COUNT(*) AS item_count
+#         FROM base_items
+#         GROUP BY storeId, billId, createdAt
+#         HAVING COUNT(*) >= 2   -- 🔑 only real combinations
+#     )
+#     SELECT
+#         storeId,
+#         item_combination,
+#         item_count,
+#         COUNT(*) AS combination_count
+#     FROM basket
+#     GROUP BY storeId, item_combination, item_count
+#     ORDER BY storeId, combination_count DESC
 
-                     """,output_path=f'{GOLD_BASE}/product_basket',
-                     kpi_name='product_basket')
+#                      """,output_path=f'{GOLD_BASE}/product_basket',
+#                      kpi_name='product_basket')
 
 
+# # ---------------------------------------------------------
+# # 2️7 Product pairs
+#         generate_kpi(con,query=f"""
+#     WITH base_items AS (
+#         SELECT DISTINCT
+#             storeId,
+#             billId,
+#             createdAt,
+#             itemName
+#         FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=true)
+#         WHERE itemName <> ''
+#           AND storeId IS NOT NULL
+#     ),
+#     item_pairs AS (
+#         SELECT
+#             a.storeId,
+#             a.itemName AS product_a,
+#             b.itemName AS product_b
+#         FROM base_items a
+#         JOIN base_items b
+#           ON a.storeId = b.storeId
+#          AND a.billId = b.billId
+#          AND a.createdAt = b.createdAt
+#          AND a.itemName < b.itemName   -- 🔑 avoid duplicate & self pairs
+#     )
+#     SELECT
+#         storeId,
+#         product_a,
+#         product_b,
+#         COUNT(*) AS pair_count
+#     FROM item_pairs
+#     GROUP BY storeId, product_a, product_b
+#     ORDER BY storeId, pair_count DESC
+
+#                      """,output_path=f'{GOLD_BASE}/Product_Pairs',
+#                      kpi_name='Product_Pairs')
 # ---------------------------------------------------------
 # 2️7 Product pairs
         generate_kpi(con,query=f"""
-    WITH base_items AS (
-        SELECT DISTINCT
-            storeId,
-            billId,
-            createdAt,
-            itemName
-        FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=true)
-        WHERE itemName <> ''
-          AND storeId IS NOT NULL
-    ),
-    item_pairs AS (
-        SELECT
-            a.storeId,
-            a.itemName AS product_a,
-            b.itemName AS product_b
-        FROM base_items a
-        JOIN base_items b
-          ON a.storeId = b.storeId
-         AND a.billId = b.billId
-         AND a.createdAt = b.createdAt
-         AND a.itemName < b.itemName   -- 🔑 avoid duplicate & self pairs
+        SELECT storeId, itemName, COUNT(*) AS "Times Sold"
+    FROM (
+        SELECT DISTINCT billId, createdAt, itemName, storeId
+        FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=True)
+        WHERE itemName <> '' 
+          AND itemName <> 'None'
+          AND strftime(createdAt, '%Y-%m') = (
+              SELECT max(strftime(createdAt, '%Y-%m'))
+              FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=True)
+          )
     )
-    SELECT
-        storeId,
-        product_a,
-        product_b,
-        COUNT(*) AS pair_count
-    FROM item_pairs
-    GROUP BY storeId, product_a, product_b
-    ORDER BY storeId, pair_count DESC
+    GROUP BY storeId, itemName
+    ORDER BY storeId, "Times Sold" DESC
 
-                     """,output_path=f'{GOLD_BASE}/Product_Pairs',
-                     kpi_name='Product_Pairs')
+                     """,output_path=f'{GOLD_BASE}/product_quantity_this_month',
+                     kpi_name='product_quantity_this_month')
+
         
         logger.info("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
 
