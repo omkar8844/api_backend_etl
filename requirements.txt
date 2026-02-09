@@ -6,3 +6,5 @@ pandas
 dotenv
 fastparquet
 pyarrow
+scheduler
+schedule

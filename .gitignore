@@ -10,3 +10,5 @@ test_api_gold.ipynb
 ETL_IMPROVEMENTS.md
 check_data.ipynb
 items_dev.ipynb
+/__pycache__/
+/__pyche__/
