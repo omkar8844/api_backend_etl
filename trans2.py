@@ -46,6 +46,11 @@ try:
         INSTALL azure;
         LOAD azure;
     """)
+    con.execute("INSTALL httpfs;")
+    con.execute("LOAD httpfs;")
+    con.execute("""
+    SET azure_transport_option_type='curl';
+    """)
 except Exception as e:
     logger.error(f"Failed to initialize DuckDB Azure extension: {e}")
     raise

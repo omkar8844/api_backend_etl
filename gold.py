@@ -44,6 +44,11 @@ def initialize_duckdb() -> duckdb.DuckDBPyConnection:
             "CREATE OR REPLACE SECRET blob_secret (TYPE azure, CONNECTION_STRING ?);",
             [conn_str]
         )
+        con.execute("INSTALL httpfs;")
+        con.execute("LOAD httpfs;")
+        con.execute("""
+    SET azure_transport_option_type='curl';
+    """)
         
         # Performance tuning (adjust as needed)
         con.execute("PRAGMA threads=4;")
@@ -73,7 +78,7 @@ def generate_kpi(con: duckdb.DuckDBPyConnection, query: str, output_path: str,
         full_query = f"""
             COPY ({query})
             TO '{output_path}'
-            (FORMAT PARQUET, PARTITION_BY ({partition_by}))
+            (FORMAT PARQUET, PARTITION_BY ({partition_by}),OVERWRITE_OR_IGNORE TRUE)
         """
         con.execute(full_query)
         logger.info(f"Successfully generated KPI: {kpi_display_name}")
@@ -193,56 +198,56 @@ def main():
 )
 
 
-# ---------------------------------------------------------
-# 7️⃣ CUSTOMER LIFETIME VALUE (CLTV)
-# ---------------------------------------------------------
-        generate_kpi(con,
-    query=f"""
-        SELECT
-            storeId,
-            mobileNumber,
-            -- total amount spent
-            SUM(billAmount) AS total_spend,
-            -- number of invoices
-            COUNT(billId) AS transaction_count,
-            -- average bill
-            AVG(billAmount) AS avg_bill_value,
-            -- first and last purchase
-            MIN(createdAt) AS first_purchase,
-            MAX(createdAt) AS last_purchase,
-            -- lifetime in days
-            GREATEST(
-                DATE_DIFF('day', MIN(createdAt), MAX(createdAt)),
-                1  -- avoid divide by zero
-            ) AS lifetime_days,
-            -- frequency = transactions / days active
-            (COUNT(billId) :: DOUBLE) 
-                / GREATEST(
-                    DATE_DIFF('day', MIN(createdAt), MAX(createdAt)),
-                    1
-                ) AS purchase_frequency,
-            -- SAFE CLTV formulation with upper bound & float cast
-            CAST(
-                LEAST(
-                    SUM(billAmount) *
-                    (
-                        (COUNT(billId) :: DOUBLE)
-                        / GREATEST(
-                            DATE_DIFF('day', MIN(createdAt), MAX(createdAt)),
-                            1
-                        )
-                    ),
-                    1e12   -- prevent float overflow beyond json range
-                )
-                AS DOUBLE
-            ) AS cltv_value
-        FROM read_parquet('{SILVER_PATH}', union_by_name=True)
-        WHERE LENGTH(mobileNumber) = 10     -- avoid null/bad customer ids
-        GROUP BY storeId, mobileNumber
-    """,
-    output_path=f"{GOLD_BASE}/cltv",
-    kpi_name="Customer Lifetime Value"
-)
+# # ---------------------------------------------------------
+# # 7️⃣ CUSTOMER LIFETIME VALUE (CLTV)
+# # ---------------------------------------------------------
+#         generate_kpi(con,
+#     query=f"""
+#         SELECT
+#             storeId,
+#             mobileNumber,
+#             -- total amount spent
+#             SUM(billAmount) AS total_spend,
+#             -- number of invoices
+#             COUNT(billId) AS transaction_count,
+#             -- average bill
+#             AVG(billAmount) AS avg_bill_value,
+#             -- first and last purchase
+#             MIN(createdAt) AS first_purchase,
+#             MAX(createdAt) AS last_purchase,
+#             -- lifetime in days
+#             GREATEST(
+#                 DATE_DIFF('day', MIN(createdAt), MAX(createdAt)),
+#                 1  -- avoid divide by zero
+#             ) AS lifetime_days,
+#             -- frequency = transactions / days active
+#             (COUNT(billId) :: DOUBLE) 
+#                 / GREATEST(
+#                     DATE_DIFF('day', MIN(createdAt), MAX(createdAt)),
+#                     1
+#                 ) AS purchase_frequency,
+#             -- SAFE CLTV formulation with upper bound & float cast
+#             CAST(
+#                 LEAST(
+#                     SUM(billAmount) *
+#                     (
+#                         (COUNT(billId) :: DOUBLE)
+#                         / GREATEST(
+#                             DATE_DIFF('day', MIN(createdAt), MAX(createdAt)),
+#                             1
+#                         )
+#                     ),
+#                     1e12   -- prevent float overflow beyond json range
+#                 )
+#                 AS DOUBLE
+#             ) AS cltv_value
+#         FROM read_parquet('{SILVER_PATH}', union_by_name=True)
+#         WHERE LENGTH(mobileNumber) = 10     -- avoid null/bad customer ids
+#         GROUP BY storeId, mobileNumber
+#     """,
+#     output_path=f"{GOLD_BASE}/cltv",
+#     kpi_name="Customer Lifetime Value"
+# )
 
 # ---------------------------------------------------------
 # 8️⃣ AVG_VISIT_WEEK_DAY
