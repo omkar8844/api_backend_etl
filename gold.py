@@ -1180,7 +1180,7 @@ ORDER BY storeId, "Product Sale" DESC
                      """,output_path=f'{GOLD_BASE}/product_sales_this_month',
                      kpi_name='product_sales_this_month')
 # ---------------------------------------------------------
-# 30 Product sales last-3 month
+# 31 Product sales last-3 month
         generate_kpi(con,query=f"""
                     SELECT storeId,
            itemName,
@@ -1201,6 +1201,32 @@ ORDER BY storeId, "Product Sale" DESC
     ORDER BY storeId, "Product Sale" DESC
                      """,output_path=f'{GOLD_BASE}/product_sales_last_3_month',
                      kpi_name='product_sales_last_3_month')
+        
+# ---------------------------------------------------------
+#32 customer items purchase frequency
+        generate_kpi(con,query=f"""
+                        SELECT
+    b.storeId,
+    b.mobileNumber,
+    b.name,
+    i.itemName,
+    COUNT(DISTINCT b.billId) AS times_purchased
+FROM read_parquet('{SILVER_PATH}', union_by_name=true) b
+JOIN read_parquet('{SILVER_PATH_ITEMS}', union_by_name=true) i
+    ON b.billId = i.billId
+WHERE
+    b.storeId IS NOT NULL
+    AND LENGTH(b.mobileNumber) = 10
+    AND i.itemName <> ''
+GROUP BY
+    b.storeId,
+    b.mobileNumber,
+    b.name,
+    i.itemName
+ORDER BY
+    times_purchased DESC
+                    """,output_path=f'{GOLD_BASE}/customer_item_purchase_frequency',
+                     kpi_name='customer_item_purchase_frequency')
 
         
         logger.info("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
