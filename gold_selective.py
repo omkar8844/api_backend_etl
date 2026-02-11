@@ -44,6 +44,11 @@ def initialize_duckdb() -> duckdb.DuckDBPyConnection:
             "CREATE OR REPLACE SECRET blob_secret (TYPE azure, CONNECTION_STRING ?);",
             [conn_str]
         )
+        con.execute("INSTALL httpfs;")
+        con.execute("LOAD httpfs;")
+        con.execute("""
+    SET azure_transport_option_type='curl';
+    """)
         
         # Performance tuning (adjust as needed)
         con.execute("PRAGMA threads=4;")
@@ -73,7 +78,7 @@ def generate_kpi(con: duckdb.DuckDBPyConnection, query: str, output_path: str,
         full_query = f"""
             COPY ({query})
             TO '{output_path}'
-            (FORMAT PARQUET, PARTITION_BY ({partition_by}))
+            (FORMAT PARQUET, PARTITION_BY ({partition_by}),OVERWRITE_OR_IGNORE TRUE)
         """
         con.execute(full_query)
         logger.info(f"Successfully generated KPI: {kpi_display_name}")
@@ -93,7 +98,7 @@ def main():
         
         # Generate all KPIs
 
-        # ---------------------------------------------------------
+#         # ---------------------------------------------------------
 #         # 1️⃣ DAILY SALES TREND
 #         # ---------------------------------------------------------
 #         generate_kpi(con,
@@ -193,56 +198,56 @@ def main():
 # )
 
 
-# # ---------------------------------------------------------
-# # 7️⃣ CUSTOMER LIFETIME VALUE (CLTV)
-# # ---------------------------------------------------------
-#         generate_kpi(con,
-#     query=f"""
-#         SELECT
-#             storeId,
-#             mobileNumber,
-#             -- total amount spent
-#             SUM(billAmount) AS total_spend,
-#             -- number of invoices
-#             COUNT(billId) AS transaction_count,
-#             -- average bill
-#             AVG(billAmount) AS avg_bill_value,
-#             -- first and last purchase
-#             MIN(createdAt) AS first_purchase,
-#             MAX(createdAt) AS last_purchase,
-#             -- lifetime in days
-#             GREATEST(
-#                 DATE_DIFF('day', MIN(createdAt), MAX(createdAt)),
-#                 1  -- avoid divide by zero
-#             ) AS lifetime_days,
-#             -- frequency = transactions / days active
-#             (COUNT(billId) :: DOUBLE) 
-#                 / GREATEST(
-#                     DATE_DIFF('day', MIN(createdAt), MAX(createdAt)),
-#                     1
-#                 ) AS purchase_frequency,
-#             -- SAFE CLTV formulation with upper bound & float cast
-#             CAST(
-#                 LEAST(
-#                     SUM(billAmount) *
-#                     (
-#                         (COUNT(billId) :: DOUBLE)
-#                         / GREATEST(
-#                             DATE_DIFF('day', MIN(createdAt), MAX(createdAt)),
-#                             1
-#                         )
-#                     ),
-#                     1e12   -- prevent float overflow beyond json range
-#                 )
-#                 AS DOUBLE
-#             ) AS cltv_value
-#         FROM read_parquet('{SILVER_PATH}', union_by_name=True)
-#         WHERE LENGTH(mobileNumber) = 10     -- avoid null/bad customer ids
-#         GROUP BY storeId, mobileNumber
-#     """,
-#     output_path=f"{GOLD_BASE}/cltv",
-#     kpi_name="Customer Lifetime Value"
-# )
+# # # ---------------------------------------------------------
+# # # 7️⃣ CUSTOMER LIFETIME VALUE (CLTV)
+# # # ---------------------------------------------------------
+# #         generate_kpi(con,
+# #     query=f"""
+# #         SELECT
+# #             storeId,
+# #             mobileNumber,
+# #             -- total amount spent
+# #             SUM(billAmount) AS total_spend,
+# #             -- number of invoices
+# #             COUNT(billId) AS transaction_count,
+# #             -- average bill
+# #             AVG(billAmount) AS avg_bill_value,
+# #             -- first and last purchase
+# #             MIN(createdAt) AS first_purchase,
+# #             MAX(createdAt) AS last_purchase,
+# #             -- lifetime in days
+# #             GREATEST(
+# #                 DATE_DIFF('day', MIN(createdAt), MAX(createdAt)),
+# #                 1  -- avoid divide by zero
+# #             ) AS lifetime_days,
+# #             -- frequency = transactions / days active
+# #             (COUNT(billId) :: DOUBLE) 
+# #                 / GREATEST(
+# #                     DATE_DIFF('day', MIN(createdAt), MAX(createdAt)),
+# #                     1
+# #                 ) AS purchase_frequency,
+# #             -- SAFE CLTV formulation with upper bound & float cast
+# #             CAST(
+# #                 LEAST(
+# #                     SUM(billAmount) *
+# #                     (
+# #                         (COUNT(billId) :: DOUBLE)
+# #                         / GREATEST(
+# #                             DATE_DIFF('day', MIN(createdAt), MAX(createdAt)),
+# #                             1
+# #                         )
+# #                     ),
+# #                     1e12   -- prevent float overflow beyond json range
+# #                 )
+# #                 AS DOUBLE
+# #             ) AS cltv_value
+# #         FROM read_parquet('{SILVER_PATH}', union_by_name=True)
+# #         WHERE LENGTH(mobileNumber) = 10     -- avoid null/bad customer ids
+# #         GROUP BY storeId, mobileNumber
+# #     """,
+# #     output_path=f"{GOLD_BASE}/cltv",
+# #     kpi_name="Customer Lifetime Value"
+# # )
 
 # # ---------------------------------------------------------
 # # 8️⃣ AVG_VISIT_WEEK_DAY
@@ -1028,7 +1033,6 @@ def main():
 #                      """,output_path=f'{GOLD_BASE}/top_prods_by_qt',
 #                      kpi_name='most_sold_products')
         
-# ---------------------------------------------------------
 # # ---------------------------------------------------------
 # # 2️6 Product by sales
 #         generate_kpi(con,query=f"""
@@ -1044,7 +1048,9 @@ def main():
 # GROUP BY storeId, itemName
 # ORDER BY storeId, "Product Sale" DESC
 #                      """,output_path=f'{GOLD_BASE}/top_prods_by_sales',
-#                      kpi_name='most_saling_products')# ---------------------------------------------------------
+#                      kpi_name='most_saling_products')
+
+# # ---------------------------------------------------------
 # # 2️7 Product basket
 #         generate_kpi(con,query=f"""
 #                 WITH base_items AS (
@@ -1117,8 +1123,10 @@ def main():
 
 #                      """,output_path=f'{GOLD_BASE}/Product_Pairs',
 #                      kpi_name='Product_Pairs')
-# ---------------------------------------------------------
-# # 2️7 Product pairs
+
+
+# # ---------------------------------------------------------
+# # 2️8 Product qt this months
 #         generate_kpi(con,query=f"""
 #         SELECT storeId, itemName, COUNT(*) AS "Times Sold"
 #     FROM (
@@ -1136,9 +1144,9 @@ def main():
 
 #                      """,output_path=f'{GOLD_BASE}/product_quantity_this_month',
 #                      kpi_name='product_quantity_this_month')
-
-# ---------------------------------------------------------
-# # 2️8 Product pairs
+        
+# # ---------------------------------------------------------
+# # 2️9 Product qt this qt
 #         generate_kpi(con,query=f"""
 #                     SELECT storeId, itemName, COUNT(*) AS "Times Sold"
 #     FROM (
@@ -1159,45 +1167,133 @@ def main():
 #                      kpi_name='product_quantity_this_quarter')
 
 
+# # ---------------------------------------------------------
+# # 30 Product sales this month
+#         generate_kpi(con,query=f"""
+#                     SELECT storeId,
+#            itemName,
+#            SUM(CAST(itemPrice AS DOUBLE)) AS "Product Sale"
+#     FROM (
+#         SELECT DISTINCT billId, createdAt, itemName, storeId, itemPrice
+#         FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=True)
+#         WHERE itemName <> ''
+#           AND REGEXP_MATCHES(itemPrice, '^[0-9]+(\.[0-9]+)?$')
+#           AND strftime(createdAt, '%Y-%m') = strftime(current_date, '%Y-%m')
+#     )
+#     GROUP BY storeId, itemName
+#     ORDER BY storeId, "Product Sale" DESC
+#                      """,output_path=f'{GOLD_BASE}/product_sales_this_month',
+#                      kpi_name='product_sales_this_month')
+# # ---------------------------------------------------------
+# # 31 Product sales last-3 month
+#         generate_kpi(con,query=f"""
+#                     SELECT storeId,
+#            itemName,
+#            SUM(CAST(itemPrice AS DOUBLE)) AS "Product Sale"
+#     FROM (
+#         SELECT DISTINCT billId, createdAt, itemName, storeId, itemPrice
+#         FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=True)
+#         WHERE itemName <> ''
+#           AND REGEXP_MATCHES(itemPrice, '^[0-9]+(\.[0-9]+)?$')
+#           AND strftime(createdAt, '%Y-%m') IN (
+#               SELECT DISTINCT strftime(createdAt, '%Y-%m')
+#               FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=True)
+#               ORDER BY strftime(createdAt, '%Y-%m') DESC
+#               LIMIT 3
+#           )
+#     )
+#     GROUP BY storeId, itemName
+#     ORDER BY storeId, "Product Sale" DESC
+#                      """,output_path=f'{GOLD_BASE}/product_sales_last_3_month',
+#                      kpi_name='product_sales_last_3_month')
+        
+# # ---------------------------------------------------------
+# #32 customer items purchase frequency
+#         generate_kpi(con,query=f"""
+#                         SELECT
+#     b.storeId,
+#     b.mobileNumber,
+#     b.name,
+#     i.itemName,
+#     COUNT(DISTINCT b.billId) AS times_purchased
+# FROM read_parquet('{SILVER_PATH}', union_by_name=true) b
+# JOIN read_parquet('{SILVER_PATH_ITEMS}', union_by_name=true) i
+#     ON b.billId = i.billId
+# WHERE
+#     b.storeId IS NOT NULL
+#     AND LENGTH(b.mobileNumber) = 10
+#     AND i.itemName <> ''
+# GROUP BY
+#     b.storeId,
+#     b.mobileNumber,
+#     b.name,
+#     i.itemName
+# ORDER BY
+#     times_purchased DESC
+#                     """,output_path=f'{GOLD_BASE}/customer_item_purchase_frequency',
+#                      kpi_name='customer_item_purchase_frequency')
+
 # ---------------------------------------------------------
-# 30 Product sales this month
+#33 customer items purchase frequency_current_month
         generate_kpi(con,query=f"""
-                    SELECT storeId,
-           itemName,
-           SUM(CAST(itemPrice AS DOUBLE)) AS "Product Sale"
-    FROM (
-        SELECT DISTINCT billId, createdAt, itemName, storeId, itemPrice
-        FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=True)
-        WHERE itemName <> ''
-          AND REGEXP_MATCHES(itemPrice, '^[0-9]+(\.[0-9]+)?$')
-          AND strftime(createdAt, '%Y-%m') = strftime(current_date, '%Y-%m')
-    )
-    GROUP BY storeId, itemName
-    ORDER BY storeId, "Product Sale" DESC
-                     """,output_path=f'{GOLD_BASE}/product_sales_this_month',
-                     kpi_name='product_sales_this_month')
+                    SELECT
+    b.storeId,
+    b.mobileNumber,
+    b.name,
+    i.itemName,
+FROM read_parquet('{SILVER_PATH}', union_by_name=true) b
+JOIN read_parquet('{SILVER_PATH_ITEMS}', union_by_name=true) i
+    ON b.billId = i.billId
+WHERE
+    b.storeId IS NOT NULL
+    AND LENGTH(b.mobileNumber) = 10
+    AND i.itemName <> ''
+    AND strftime(b.createdAt,'%Y-%m')=strftime(CURRENT_DATE,'%Y-%m')
+                    """,output_path=f'{GOLD_BASE}/customer_item_purchase_frequency_current_month',
+                     kpi_name='customer_item_purchase_frequency_current_month')
+
 # ---------------------------------------------------------
-# 30 Product sales last-3 month
+#34 customer items purchase frequency_last3_month
         generate_kpi(con,query=f"""
-                    SELECT storeId,
-           itemName,
-           SUM(CAST(itemPrice AS DOUBLE)) AS "Product Sale"
-    FROM (
-        SELECT DISTINCT billId, createdAt, itemName, storeId, itemPrice
-        FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=True)
-        WHERE itemName <> ''
-          AND REGEXP_MATCHES(itemPrice, '^[0-9]+(\.[0-9]+)?$')
-          AND strftime(createdAt, '%Y-%m') IN (
-              SELECT DISTINCT strftime(createdAt, '%Y-%m')
-              FROM read_parquet('{SILVER_PATH_ITEMS}', union_by_name=True)
-              ORDER BY strftime(createdAt, '%Y-%m') DESC
-              LIMIT 3
-          )
-    )
-    GROUP BY storeId, itemName
-    ORDER BY storeId, "Product Sale" DESC
-                     """,output_path=f'{GOLD_BASE}/product_sales_last_3_month',
-                     kpi_name='product_sales_last_3_month')
+                    SELECT
+    b.storeId,
+    b.mobileNumber,
+    b.name,
+    i.itemName
+FROM read_parquet('{SILVER_PATH}', union_by_name=true) b
+JOIN read_parquet('{SILVER_PATH_ITEMS}', union_by_name=true) i
+    ON b.billId = i.billId
+WHERE
+    b.storeId IS NOT NULL
+    AND LENGTH(b.mobileNumber) = 10
+    AND i.itemName <> ''
+    AND date_trunc('month', CAST(b.createdAt AS TIMESTAMP)) 
+        BETWEEN date_trunc('month', CURRENT_DATE) - INTERVAL 2 MONTH
+            AND date_trunc('month', CURRENT_DATE)
+                    """,output_path=f'{GOLD_BASE}/customer_item_purchase_frequency_last3_month',
+                     kpi_name='customer_item_purchase_frequency_last3_month')
+
+# ---------------------------------------------------------
+#35 customer items purchase frequency_last6_month
+        generate_kpi(con,query=f"""
+                    SELECT
+    b.storeId,
+    b.mobileNumber,
+    b.name,
+    i.itemName
+FROM read_parquet('{SILVER_PATH}', union_by_name=true) b
+JOIN read_parquet('{SILVER_PATH_ITEMS}', union_by_name=true) i
+    ON b.billId = i.billId
+WHERE
+    b.storeId IS NOT NULL
+    AND LENGTH(b.mobileNumber) = 10
+    AND i.itemName <> ''
+    AND date_trunc('month', CAST(b.createdAt AS TIMESTAMP)) 
+        BETWEEN date_trunc('month', CURRENT_DATE) - INTERVAL 5 MONTH
+            AND date_trunc('month', CURRENT_DATE)
+
+                    """,output_path=f'{GOLD_BASE}/customer_item_purchase_frequency_last6_month',
+                     kpi_name='customer_item_purchase_frequency_last6_month')
 
         
         logger.info("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")

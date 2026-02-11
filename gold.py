@@ -1233,6 +1233,68 @@ ORDER BY
                     """,output_path=f'{GOLD_BASE}/customer_item_purchase_frequency',
                      kpi_name='customer_item_purchase_frequency')
 
+# ---------------------------------------------------------
+#33 customer items purchase frequency_current_month
+        generate_kpi(con,query=f"""
+                    SELECT
+    b.storeId,
+    b.mobileNumber,
+    b.name,
+    i.itemName,
+FROM read_parquet('{SILVER_PATH}', union_by_name=true) b
+JOIN read_parquet('{SILVER_PATH_ITEMS}', union_by_name=true) i
+    ON b.billId = i.billId
+WHERE
+    b.storeId IS NOT NULL
+    AND LENGTH(b.mobileNumber) = 10
+    AND i.itemName <> ''
+    AND strftime(b.createdAt,'%Y-%m')=strftime(CURRENT_DATE,'%Y-%m')
+                    """,output_path=f'{GOLD_BASE}/customer_item_purchase_frequency_current_month',
+                     kpi_name='customer_item_purchase_frequency_current_month')
+
+# ---------------------------------------------------------
+#34 customer items purchase frequency_last3_month
+        generate_kpi(con,query=f"""
+                    SELECT
+    b.storeId,
+    b.mobileNumber,
+    b.name,
+    i.itemName
+FROM read_parquet('{SILVER_PATH}', union_by_name=true) b
+JOIN read_parquet('{SILVER_PATH_ITEMS}', union_by_name=true) i
+    ON b.billId = i.billId
+WHERE
+    b.storeId IS NOT NULL
+    AND LENGTH(b.mobileNumber) = 10
+    AND i.itemName <> ''
+    AND date_trunc('month', CAST(b.createdAt AS TIMESTAMP)) 
+        BETWEEN date_trunc('month', CURRENT_DATE) - INTERVAL 2 MONTH
+            AND date_trunc('month', CURRENT_DATE)
+                    """,output_path=f'{GOLD_BASE}/customer_item_purchase_frequency_last3_month',
+                     kpi_name='customer_item_purchase_frequency_last3_month')
+
+# ---------------------------------------------------------
+#35 customer items purchase frequency_last6_month
+        generate_kpi(con,query=f"""
+                    SELECT
+    b.storeId,
+    b.mobileNumber,
+    b.name,
+    i.itemName
+FROM read_parquet('{SILVER_PATH}', union_by_name=true) b
+JOIN read_parquet('{SILVER_PATH_ITEMS}', union_by_name=true) i
+    ON b.billId = i.billId
+WHERE
+    b.storeId IS NOT NULL
+    AND LENGTH(b.mobileNumber) = 10
+    AND i.itemName <> ''
+    AND date_trunc('month', CAST(b.createdAt AS TIMESTAMP)) 
+        BETWEEN date_trunc('month', CURRENT_DATE) - INTERVAL 5 MONTH
+            AND date_trunc('month', CURRENT_DATE)
+
+                    """,output_path=f'{GOLD_BASE}/customer_item_purchase_frequency_last6_month',
+                     kpi_name='customer_item_purchase_frequency_last6_month')
+
         
         logger.info("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
 
