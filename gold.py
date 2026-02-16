@@ -1318,8 +1318,82 @@ ORDER BY
 
                     """,output_path=f'{GOLD_BASE}/customer_item_purchase_frequency_last6_month',
                      kpi_name='customer_item_purchase_frequency_last6_month')
-
         
+# ---------------------------------------------------------
+#36 inactive cust last 30 days
+        generate_kpi(con,query=f"""
+                    WITH customer_last_visit AS (
+        SELECT
+            storeId,
+            mobileNumber,
+            name,
+            DATE(createdAt) AS last_visit_date,
+            ROW_NUMBER() OVER (
+                PARTITION BY mobileNumber
+                ORDER BY createdAt DESC
+            ) AS rn
+        FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+        WHERE LENGTH(mobileNumber) = 10
+          AND storeId IS NOT NULL
+    ),
+    latest_customer_record AS (
+        SELECT
+            storeId,
+            mobileNumber,
+            name,
+            last_visit_date
+        FROM customer_last_visit
+        WHERE rn = 1
+    )
+    SELECT
+        storeId,
+        name,
+        mobileNumber,
+        last_visit_date
+    FROM latest_customer_record
+    WHERE last_visit_date < CURRENT_DATE - 30
+
+                    """,output_path=f'{GOLD_BASE}/inactive_customers_30days',
+                     kpi_name='inactive_customers_30days')
+        
+# ---------------------------------------------------------
+#37 inactive cust last 90 days
+        generate_kpi(con,query=f"""
+    WITH customer_last_visit AS (
+        SELECT
+            storeId,
+            mobileNumber,
+            name,
+            DATE(createdAt) AS last_visit_date,
+            ROW_NUMBER() OVER (
+                PARTITION BY mobileNumber
+                ORDER BY createdAt DESC
+            ) AS rn
+        FROM read_parquet('{SILVER_PATH}', union_by_name=true)
+        WHERE LENGTH(mobileNumber) = 10
+          AND storeId IS NOT NULL
+    ),
+    latest_customer_record AS (
+        SELECT
+            storeId,
+            mobileNumber,
+            name,
+            last_visit_date
+        FROM customer_last_visit
+        WHERE rn = 1
+    )
+    SELECT
+        storeId,
+        name,
+        mobileNumber,
+        last_visit_date
+    FROM latest_customer_record
+    WHERE last_visit_date < CURRENT_DATE - 90
+
+                    """,output_path=f'{GOLD_BASE}/inactive_customers_90days',
+                     kpi_name='inactive_customers_90days')
+
+
         logger.info("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
 
 
