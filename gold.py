@@ -1394,6 +1394,14 @@ ORDER BY
 
                     """,output_path=f'{GOLD_BASE}/inactive_customers_90days',
                      kpi_name='inactive_customers_90days')
+        
+# ---------------------------------------------------------
+#38 store_wise_data
+        generate_kpi(con,query=f"""
+            select * from
+            read_parquet('{SILVER_PATH}',union_by_name=True)
+                    """,output_path=f'{GOLD_BASE}/storewise_data',
+                     kpi_name='storewise_data')
 
 
         logger.info("✅ ALL GOLD KPIs GENERATED AND PARTITIONED BY storeId")
