@@ -754,14 +754,14 @@ def main():
 # This helps identify customers who may have churned and need re-engagement.
 # ---------------------------------------------------------
         generate_kpi(con,query=f"""
-                         WITH customer_last_visit AS (
+    WITH customer_last_visit AS (
         SELECT
             storeId,
             mobileNumber,
             name,
             DATE(createdAt) AS last_visit_date,
             ROW_NUMBER() OVER (
-                PARTITION BY mobileNumber
+                PARTITION BY storeId, mobileNumber, name
                 ORDER BY createdAt DESC
             ) AS rn
         FROM read_parquet('{SILVER_PATH}', union_by_name=true)
@@ -1324,14 +1324,14 @@ ORDER BY
 # ---------------------------------------------------------
 #36 inactive cust last 30 days
         generate_kpi(con,query=f"""
-                    WITH customer_last_visit AS (
+    WITH customer_last_visit AS (
         SELECT
             storeId,
             mobileNumber,
             name,
             DATE(createdAt) AS last_visit_date,
             ROW_NUMBER() OVER (
-                PARTITION BY mobileNumber
+                PARTITION BY storeId, mobileNumber, name
                 ORDER BY createdAt DESC
             ) AS rn
         FROM read_parquet('{SILVER_PATH}', union_by_name=true)
@@ -1368,7 +1368,7 @@ ORDER BY
             name,
             DATE(createdAt) AS last_visit_date,
             ROW_NUMBER() OVER (
-                PARTITION BY mobileNumber
+                PARTITION BY storeId, mobileNumber, name
                 ORDER BY createdAt DESC
             ) AS rn
         FROM read_parquet('{SILVER_PATH}', union_by_name=true)
