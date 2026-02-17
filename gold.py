@@ -546,6 +546,7 @@ def main():
             SELECT
                 storeId,
                 mobileNumber,
+                name,
                 STRFTIME(DATE(createdAt), '%Y-%m') AS year_month
             FROM read_parquet('{SILVER_PATH}', union_by_name=true)
             WHERE LENGTH(mobileNumber) = 10
@@ -560,6 +561,7 @@ def main():
         customer_stats AS (
             SELECT
                 b.storeId,
+                b.name,
                 b.mobileNumber,
                 -- lifetime visits
                 COUNT(*) AS lifetime_visits,
@@ -571,7 +573,7 @@ def main():
             FROM base b
             JOIN latest_month lm
                 ON b.storeId = lm.storeId
-            GROUP BY b.storeId, b.mobileNumber
+            GROUP BY b.storeId, b.mobileNumber,b.name
         )
         SELECT
             storeId,
