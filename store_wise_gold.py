@@ -46,9 +46,9 @@ def initialize_duckdb() -> duckdb.DuckDBPyConnection:
         )
         con.execute("INSTALL httpfs;")
         con.execute("LOAD httpfs;")
-    #     con.execute("""
-    # SET azure_transport_option_type='curl';
-    # """)
+        con.execute("""
+    SET azure_transport_option_type='curl';
+    """)
         
         # Performance tuning (adjust as needed)
         con.execute("PRAGMA threads=4;")
